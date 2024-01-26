@@ -1,43 +1,68 @@
 package kvsrv
 
 import (
-	"log"
 	"sync"
 )
 
-const Debug = false
-
-func DPrintf(format string, a ...interface{}) (n int, err error) {
-	if Debug {
-		log.Printf(format, a...)
-	}
-	return
+type result struct {
+	value  string
+	seqNum int
 }
-
 
 type KVServer struct {
-	mu sync.Mutex
-
-	// Your definitions here.
+	lock    sync.Mutex
+	data    map[string]string
+	results map[int]result
 }
 
+func (kv *KVServer) hasProcessed(clerkId int, seqNum int) bool {
+	if v, ok := kv.results[clerkId]; ok {
+		return v.seqNum == seqNum
+	}
+
+	return false
+}
 
 func (kv *KVServer) Get(args *GetArgs, reply *GetReply) {
-	// Your code here.
+	kv.lock.Lock()
+	defer kv.lock.Unlock()
+
+	reply.Value = kv.data[args.Key]
 }
 
 func (kv *KVServer) Put(args *PutAppendArgs, reply *PutAppendReply) {
-	// Your code here.
+	kv.lock.Lock()
+	defer kv.lock.Unlock()
+
+	if !kv.hasProcessed(args.ClerkId, args.SeqNum) {
+		kv.results[args.ClerkId] = result{
+			seqNum: args.SeqNum,
+		}
+
+		kv.data[args.Key] = args.Value
+	}
 }
 
 func (kv *KVServer) Append(args *PutAppendArgs, reply *PutAppendReply) {
-	// Your code here.
+	kv.lock.Lock()
+	defer kv.lock.Unlock()
+
+	if !kv.hasProcessed(args.ClerkId, args.SeqNum) {
+		kv.results[args.ClerkId] = result{
+			value:  kv.data[args.Key],
+			seqNum: args.SeqNum,
+		}
+
+		kv.data[args.Key] += args.Value
+	}
+
+	reply.Value = kv.results[args.ClerkId].value
 }
 
 func StartKVServer() *KVServer {
 	kv := new(KVServer)
-
-	// You may need initialization code here.
-
+	kv.lock = sync.Mutex{}
+	kv.data = map[string]string{}
+	kv.results = map[int]result{}
 	return kv
 }

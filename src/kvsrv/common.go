@@ -1,12 +1,16 @@
 package kvsrv
 
-// Put or Append
+import (
+	"crypto/rand"
+	"math/big"
+)
+
 type PutAppendArgs struct {
-	Key   string
-	Value string
-	// You'll have to add definitions here.
-	// Field names must start with capital letters,
-	// otherwise RPC will break.
+	Type    string
+	Key     string
+	Value   string
+	ClerkId int
+	SeqNum  int
 }
 
 type PutAppendReply struct {
@@ -14,10 +18,22 @@ type PutAppendReply struct {
 }
 
 type GetArgs struct {
-	Key string
-	// You'll have to add definitions here.
+	Key     string
+	ClerkId int
+	SeqNum  int
 }
 
 type GetReply struct {
 	Value string
+}
+
+func nrand() int64 {
+	max := big.NewInt(int64(1) << 62)
+	bigx, _ := rand.Int(rand.Reader, max)
+	x := bigx.Int64()
+	return x
+}
+
+func id() int {
+	return int(nrand())
 }
