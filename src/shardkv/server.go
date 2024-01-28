@@ -517,7 +517,7 @@ func (kv *ShardKV) downloadShard(sid int, servers []string, config int) (ok bool
 		results map[string]Result
 	}
 
-	ch := make(chan channelResult)
+	ch := make(chan channelResult, 1)
 
 	go func() {
 		var args MigrateShardArgs
