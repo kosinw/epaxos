@@ -57,7 +57,7 @@ type ApplyMsg struct {
 	SnapshotIndex int
 }
 
-// A Go object representing a Raft log entry.
+// REPLACE WITH INSTANCe
 type LogEntry struct {
 	Term    int         // term when entry was received by leader
 	Index   int         // index that entry will appear at if it's ever committed
@@ -73,6 +73,8 @@ func (le LogEntry) String() string {
 // The zeroth index in the log actually tells us the last included index
 // and last included term of the snapshot and is not included as part of the log.
 type Log []LogEntry
+
+type PaxosLog [][]Instance
 
 func makeLog() Log { return Log{LogEntry{Term: 0, Index: 0, Command: 0}} }
 
@@ -160,6 +162,37 @@ type Raft struct {
 	lastApplied int   // index of highest log entry known to be applied to state machine
 	nextIndex   []int // for each peer, index of next log entry which must be sent
 	matchIndex  []int // for each peer, index of highest log entry known to be replicated
+
+}
+
+type EPaxos struct {
+	lock      sync.Mutex          // Lock to protect shared access to this peer's state
+	peers     []*labrpc.ClientEnd // RPC end points of all peers
+	persister *Persister          // Object to hold this peer's persisted state
+	me        int                 // this peer's index into peers[]
+	dead      int32               // set by Kill()
+	numPeers  int
+	// Your data here (3A, 3B, 3C).
+	// Look at the paper's Figure 2 for a description of what
+	// state a Raft server must maintain.
+
+	// State not specified by paper.
+	state              state           // current status of peer (one of {follower, leader, candidate})
+	electionTimestamp  time.Time       // starting timestamp for next election timeout
+	broadcastTimestamp time.Time       // starting timestamp for next log replication broadcast
+	commitLock         *sync.Cond      // lock to protect commitIndex
+	applyCh            chan<- ApplyMsg // used to send client messages
+
+	// Figure 2 state.
+	currentTerm int        // latest term server has seen (persistent)
+	votedFor    int        // candidateId that received in current vote (persistent)
+	log         PaxosLog   // log (persistent)
+	commitIndex int        // index of highest log entry known to be committed
+	lastApplied []int      // index of highest log entry known to be applied to state machine
+	status      [][]Status //Status of every instance (see common.go)
+	nextIndex   []int      // for each peer, index of next log entry which must be sent
+	matchIndex  []int      // for each peer, index of highest log entry known to be replicated
+
 }
 
 func (rf *Raft) majority() int {
