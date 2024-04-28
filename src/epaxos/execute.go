@@ -14,7 +14,9 @@ func (e *EPaxos) killed() bool {
 
 func (e *EPaxos) execute() {
 	for !e.killed() {
-		e.scc(len(e.peers))
+		if !e.scc(len(e.peers)) {
+			time.Sleep(1000)
+		}
 		// for server := 0; server < len(e.peers); server++ {
 
 		// 	if e.lastApplied[server] < len(e.log[server]) {
@@ -27,7 +29,8 @@ func (e *EPaxos) execute() {
 }
 
 // Finds the SCCs and executes instances in those SCCs
-func (e *EPaxos) execDFs(replica int, curr int, disc [][]int, low [][]int, stack *[]LogIndex, inStack [][]bool, parents [][]Instance, Time *int, sccs [][]int, counter *int) {
+func (e *EPaxos) execDFs(replica int, curr int, disc [][]int, low [][]int, stack *[]LogIndex, inStack [][]bool, parents [][]Instance, Time *int, sccs [][]int, counter *int) bool {
+	executed := false
 	//  visited[curr]=true;
 	fmt.Printf("visiting replica %v index %v \n", replica, curr)
 	low[replica][curr] = *Time
@@ -41,7 +44,7 @@ func (e *EPaxos) execDFs(replica int, curr int, disc [][]int, low [][]int, stack
 			e.lock.Unlock()
 			fmt.Printf("waiting for %v status %v", instance, e.status[instance.Replica][instance.Index])
 			//ADJUST
-			time.Sleep(1000 * 1000)
+			time.Sleep(1000)
 			e.lock.Lock()
 		}
 		if e.status[instance.Replica][instance.Index] == EXECUTED {
@@ -50,7 +53,7 @@ func (e *EPaxos) execDFs(replica int, curr int, disc [][]int, low [][]int, stack
 		// if(!visited[edge.first]){
 		if disc[instance.Replica][instance.Index] == -1 {
 			parents[instance.Replica][instance.Index] = e.log[instance.Replica][instance.Index]
-			e.execDFs(instance.Replica, instance.Index, disc, low, stack, inStack, parents, Time, sccs, counter)
+			executed = executed || e.execDFs(instance.Replica, instance.Index, disc, low, stack, inStack, parents, Time, sccs, counter)
 			low[replica][curr] = min(low[replica][curr], low[instance.Replica][instance.Index])
 		} else if inStack[instance.Replica][instance.Index] {
 			low[replica][curr] = min(low[replica][curr], disc[instance.Replica][instance.Index])
@@ -89,14 +92,16 @@ func (e *EPaxos) execDFs(replica int, curr int, disc [][]int, low [][]int, stack
 			e.applyCh <- instance
 			e.lock.Lock()
 			e.status[instance.Position.Replica][instance.Position.Index] = EXECUTED
+			executed = true
 		}
 		// sccs[c.Replica][c.Index] = *counter
 		// *counter = *counter + 1
 	}
+	return executed
 }
 
 // finds all strongly connected components in DIRECTED graph
-func (e *EPaxos) scc(n int) {
+func (e *EPaxos) scc(n int) bool {
 	e.lock.Lock()
 	defer e.lock.Unlock()
 	Time := 0
@@ -119,16 +124,17 @@ func (e *EPaxos) scc(n int) {
 		}
 
 	}
-
+	executed := false
 	for R := 0; R < n; R++ {
 		for i := e.lastApplied[R] + 1; i < len(e.log[R]); i++ {
 			//  if(!visited[i]){
 			if disc[R][i] == -1 {
 
-				e.execDFs(R, i, disc, low, &stack, inStack, parents, &Time, sccs, &counter)
+				executed = executed || e.execDFs(R, i, disc, low, &stack, inStack, parents, &Time, sccs, &counter)
 			} else {
 				fmt.Printf("visited replica %v index %v \n", R, i)
 			}
 		}
 	}
+	return executed
 }
