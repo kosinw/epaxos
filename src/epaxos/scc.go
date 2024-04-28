@@ -1,7 +1,5 @@
 package epaxos
 
-import "fmt"
-
 func dfsSCC(curr int, disc []int, low []int, stack []int, inStack []bool, parents []int, Time *int, sccs []int, counter *int, graph [][]int) {
 	//  visited[curr]=true;
 	low[curr] = *Time
@@ -60,15 +58,16 @@ func scc(n int, graph [][]int) []int {
 	}
 	return sccs
 }
-func main() {
-	graph := [][]int{
-		{1},
-		{3},
-		{0},
-		{0},
-	}
-	sccs := scc(len(graph), graph)
-	for i, comp := range sccs {
-		fmt.Println(i, ":", comp)
-	}
-}
+
+// func main() {
+// 	graph := [][]int{
+// 		{1},
+// 		{3},
+// 		{0},
+// 		{0},
+// 	}
+// 	sccs := scc(len(graph), graph)
+// 	for i, comp := range sccs {
+// 		fmt.Println(i, ":", comp)
+// 	}
+// }

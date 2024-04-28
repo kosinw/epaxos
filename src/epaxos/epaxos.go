@@ -181,7 +181,7 @@ type EPaxos struct {
 	electionTimestamp  time.Time       // starting timestamp for next election timeout
 	broadcastTimestamp time.Time       // starting timestamp for next log replication broadcast
 	commitLock         *sync.Cond      // lock to protect commitIndex
-	applyCh            chan<- ApplyMsg // used to send client messages
+	applyCh            chan<- Instance // used to send client messages
 
 	// Figure 2 state.
 	currentTerm int        // latest term server has seen (persistent)
