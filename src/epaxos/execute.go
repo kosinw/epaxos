@@ -127,13 +127,17 @@ func (e *EPaxos) scc(n int) bool {
 	executed := false
 	for R := 0; R < n; R++ {
 		for i := e.lastApplied[R] + 1; i < len(e.log[R]); i++ {
-			//  if(!visited[i]){
+			if e.status[R][i] == EXECUTED {
+				e.lastApplied[R] += 1
+				continue
+			}
 			if disc[R][i] == -1 {
 
 				executed = executed || e.execDFs(R, i, disc, low, &stack, inStack, parents, &Time, sccs, &counter)
 			} else {
 				fmt.Printf("visited replica %v index %v \n", R, i)
 			}
+
 		}
 	}
 	return executed
