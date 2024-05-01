@@ -88,19 +88,19 @@ type PaxosLog [][]Instance
 
 // A Go object implementing a single EPaxos peer.
 type EPaxos struct {
-	lock      sync.Mutex          	// Lock to protect shared access to this peer's state
-	peers     []*labrpc.ClientEnd 	// RPC end points of all peers
-	me        int                 	// this peer's index into peers[]
-	dead      int32               	// set by Kill()
+	lock  sync.Mutex          // Lock to protect shared access to this peer's state
+	peers []*labrpc.ClientEnd // RPC end points of all peers
+	me    int                 // this peer's index into peers[]
+	dead  int32               // set by Kill()
 	// numPeers  int
 
-	applyCh 	chan<-Instance 		// used to send client messages
-	log         PaxosLog   			// log -- nested array indexed by replica number, instance number
-	numInstances int 				// number of instances per replica? maybe unneeded
-	instanceIndex []int 			// instance numbers of each replica
+	applyCh       chan<- Instance // used to send client messages
+	log           PaxosLog        // log -- nested array indexed by replica number, instance number
+	numInstances  int             // number of instances per replica? maybe unneeded
+	instanceIndex []int           // instance numbers of each replica
 
-	lastApplied []int      			// index of highest log entry known to be applied to state machine
-	status      [][]Status 			// status of every instance (see common.go)
+	lastApplied []int      // index of highest log entry known to be applied to state machine
+	status      [][]Status // status of every instance (see common.go)
 
 }
 
@@ -127,7 +127,7 @@ func (e *EPaxos) GetState() (int, bool) {
 func (e *EPaxos) processRequest(cmd interface{}) {
 	// increment instance # for replica L (this replica)
 	e.instanceIndex[e.me]++
-	
+
 }
 
 // PreAccept RPC handler.
@@ -139,7 +139,6 @@ func (e *EPaxos) sendPreAccept(server int, args *PreAcceptArgs, reply *PreAccept
 	ok := e.peers[server].Call("EPaxos.PreAccept", args, reply)
 	return ok
 }
-
 
 func (e *EPaxos) Accept(args *AcceptArgs, reply *AcceptReply) {
 
@@ -171,20 +170,11 @@ func (e *EPaxos) sendCommit(server int, args *CommitArgs, reply *CommitReply) bo
 // if it's ever committed. the second return value is the current
 // term. the third return value is true if this server believes it is
 // the leader.
-func (e *EPaxos) Start(command interface{}) (int, int, bool) {
-	index := -1
-	term := -1
-	isLeader := false
-
-	// Your code here (3B).
-	if e.killed() == true {
-		return index, term, isLeader
-	}
-
+func (e *EPaxos) Start(command interface{}) LogIndex {
 	e.lock.Lock()
 	defer e.lock.Unlock()
 
-	return index, term, isLeader
+	return LogIndex{0, 0}
 }
 
 // the tester doesn't halt goroutines created by Raft after each test,
@@ -221,7 +211,7 @@ func (e *EPaxos) Kill() {
 // tester or service expects Raft to send ApplyMsg messages.
 // Make() must return quickly, so it should start goroutines
 // for any long-running work.
-func Make(peers []*labrpc.ClientEnd, me int, applyCh chan Instance) *EPaxos { // modify to take in some function that can process interference between commands
+func Make(peers []*labrpc.ClientEnd, me int, persister *Persister, applyCh chan Instance, interferes func(cmd1, cmd2 interface{}) bool) *EPaxos { // modify to take in some function that can process interference between commands
 	enableLogging()
 
 	e := new(EPaxos)
