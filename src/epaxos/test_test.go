@@ -45,7 +45,7 @@ func interferes(cmd1, cmd2 interface{}) bool {
 
 // check to see if we can successfully replicate
 // 3 entries proposed by 3 different replicas each
-func TestBasicAgreeEPaxos(t *testing.T) {
+func TestBasicAgree3B(t *testing.T) {
 	const (
 		servers = 3
 		iters   = 3
@@ -54,7 +54,7 @@ func TestBasicAgreeEPaxos(t *testing.T) {
 	cfg := make_config(t, servers, false, interferes)
 	defer cfg.cleanup()
 
-	cfg.begin("Test: basic agreement")
+	cfg.begin("Test (3B): basic agreement")
 
 	key := randstring(5000)
 
@@ -79,7 +79,7 @@ func TestBasicAgreeEPaxos(t *testing.T) {
 
 // check, based on counting RPC bytes, that
 // each command is sent to each peer just once
-func TestRPCBytesEPaxos(t *testing.T) {
+func TestRPCBytes3B(t *testing.T) {
 	const (
 		servers = 3
 		iters   = 10
@@ -89,7 +89,7 @@ func TestRPCBytesEPaxos(t *testing.T) {
 	cfg := make_config(t, servers, false, interferes)
 	defer cfg.cleanup()
 
-	cfg.begin("Test: RPC byte count")
+	cfg.begin("Test (3B): RPC byte count")
 
 	cfg.one(leader, makePutCommand("first"), servers, false)
 	bytes0 := cfg.bytesTotal()
