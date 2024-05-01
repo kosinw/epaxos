@@ -16,18 +16,18 @@ import "testing"
 // import "sync"
 
 type testCommand struct {
-	Key string
+	Key interface{}
 	Op  string
 }
 
-func makePutCommand(key string) testCommand {
+func makePutCommand(key interface{}) testCommand {
 	return testCommand{
 		Key: key,
 		Op:  "PUT",
 	}
 }
 
-func makeGetCommand(key string) testCommand {
+func makeGetCommand(key interface{}) testCommand {
 	return testCommand{
 		Key: key,
 		Op:  "GET",
@@ -91,7 +91,7 @@ func TestRPCBytes3B(t *testing.T) {
 
 	cfg.begin("Test (3B): RPC byte count")
 
-	cfg.one(leader, makePutCommand("first"), servers, false)
+	cfg.one(leader, makePutCommand(99), servers, false)
 	bytes0 := cfg.bytesTotal()
 
 	var sent int64 = 0
@@ -119,4 +119,27 @@ func TestRPCBytes3B(t *testing.T) {
 	}
 
 	cfg.end()
+}
+
+func TestReplicaFailure3B(t *testing.T) {
+	const (
+		servers = 3
+		leader = 0
+	)
+
+	cfg := make_config(t, servers, false, interferes)
+	defer cfg.cleanup()
+
+	cfg.begin("Test (3B): test progressive failure of replicas")
+
+	cfg.one(leader, makePutCommand(101), servers, false)
+
+	// disconnect last command leader
+	cfg.disconnect(leader)
+
+	// the two remaining replicas should be able to agree
+	cfg.one((leader + 2) % servers, makePutCommand(102), servers-1, false)
+	cfg.one((leader + 1) % servers, makePutCommand(103), servers-1, false)
+
+	// diconnect
 }
