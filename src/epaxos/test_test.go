@@ -8,9 +8,9 @@ package epaxos
 //
 
 import "testing"
+import "time"
 
 // import "fmt"
-// import "time"
 // import "math/rand"
 // import "sync/atomic"
 // import "sync"
@@ -132,7 +132,9 @@ func TestReplicaFailure3B(t *testing.T) {
 
 	cfg.begin("Test (3B): test progressive failure of replicas")
 
-	cfg.one(leader, makePutCommand(101), servers, false)
+	if x := cfg.one(leader, makePutCommand(101), servers, false); x != (LogIndex{leader, 0}) {
+		t.Fatalf("expected instance %v.0, instead got %v", leader, x)
+	}
 
 	// disconnect last command leader
 	cfg.disconnect(leader)
@@ -141,5 +143,24 @@ func TestReplicaFailure3B(t *testing.T) {
 	cfg.one((leader + 2) % servers, makePutCommand(102), servers-1, false)
 	cfg.one((leader + 1) % servers, makePutCommand(103), servers-1, false)
 
-	// diconnect
+	// disconnect another replica
+	cfg.disconnect((leader + 2))
+
+	// submit a command to each server, make sure their instances
+	index := cfg.peers[leader + 1].Start(makePutCommand(104))
+
+	if index.Replica != leader+1 && index.Index != 1 {
+		t.Fatalf("expected instance %v.1, instead got %v", leader+1, index)
+	}
+
+	time.Sleep(2000 * time.Second)
+
+	// Check that the command did not execute.
+	n, _ := cfg.nExecuted(LogIndex{Replica: leader+1, Index: 1})
+
+	if n > 0 {
+		t.Fatalf("%v executed, but no quorum", n)
+	}
+
+	cfg.end()
 }
