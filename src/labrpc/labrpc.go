@@ -125,12 +125,13 @@ func (e *ClientEnd) Call(svcMeth string, args interface{}, reply interface{}) bo
 type Network struct {
 	mu             sync.Mutex
 	reliable       bool
-	longDelays     bool                        // pause a long time on send on disabled connection
-	longReordering bool                        // sometimes delay replies a long time
-	ends           map[interface{}]*ClientEnd  // ends, by name
-	enabled        map[interface{}]bool        // by end name
-	servers        map[interface{}]*Server     // servers, by name
-	connections    map[interface{}]interface{} // endname -> servername
+	longDelays     bool                          // pause a long time on send on disabled connection
+	longReordering bool                          // sometimes delay replies a long time
+	ends           map[interface{}]*ClientEnd    // ends, by name
+	enabled        map[interface{}]bool          // by end name
+	servers        map[interface{}]*Server       // servers, by name
+	connections    map[interface{}]interface{}   // endname -> servername
+	extraDelay     map[interface{}]time.Duration // endname -> duration
 	endCh          chan reqMsg
 	done           chan struct{} // closed when Network is cleaned up
 	count          int32         // total RPC count, for statistics
@@ -144,6 +145,7 @@ func MakeNetwork() *Network {
 	rn.enabled = map[interface{}]bool{}
 	rn.servers = map[interface{}]*Server{}
 	rn.connections = map[interface{}](interface{}){}
+	rn.extraDelay = map[interface{}]time.Duration{}
 	rn.endCh = make(chan reqMsg)
 	rn.done = make(chan struct{})
 
@@ -182,6 +184,20 @@ func (rn *Network) LongReordering(yes bool) {
 	rn.longReordering = yes
 }
 
+func (rn *Network) AddExtraDelay(endname interface{}, dur time.Duration) {
+	rn.mu.Lock()
+	defer rn.mu.Unlock()
+
+	rn.extraDelay[endname] = dur
+}
+
+func (rn *Network) RemoveExtraDelay(endname interface{}) {
+	rn.mu.Lock()
+	defer rn.mu.Unlock()
+
+	delete(rn.extraDelay, endname)
+}
+
 func (rn *Network) LongDelays(yes bool) {
 	rn.mu.Lock()
 	defer rn.mu.Unlock()
@@ -205,6 +221,15 @@ func (rn *Network) readEndnameInfo(endname interface{}) (enabled bool,
 	return
 }
 
+func (rn *Network) getExtraDelay(endname interface{}) time.Duration {
+	rn.mu.Lock()
+	defer rn.mu.Unlock()
+
+	if dur, ok := rn.extraDelay[endname]; ok { return dur }
+
+	return 0
+}
+
 func (rn *Network) isServerDead(endname interface{}, servername interface{}, server *Server) bool {
 	rn.mu.Lock()
 	defer rn.mu.Unlock()
@@ -217,6 +242,12 @@ func (rn *Network) isServerDead(endname interface{}, servername interface{}, ser
 
 func (rn *Network) processReq(req reqMsg) {
 	enabled, servername, server, reliable, longreordering := rn.readEndnameInfo(req.endname)
+
+	ms := rn.getExtraDelay(req.endname)
+
+	if ms > 0 {
+		time.Sleep(ms)
+	}
 
 	if enabled && servername != nil && server != nil {
 		if reliable == false {
