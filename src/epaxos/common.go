@@ -1,9 +1,16 @@
 package epaxos
 
+import "fmt"
+
 type LogIndex struct {
 	Replica int
 	Index   int
 }
+
+func (li LogIndex) String() string {
+	return fmt.Sprintf("%v.%v", li.Replica, li.Index)
+}
+
 type Instance struct {
 	Deps     []LogIndex  // dependencies
 	Seq      int         // index that entry will appear at if it's ever committed
