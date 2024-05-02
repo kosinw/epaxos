@@ -53,32 +53,31 @@ func (e *EPaxos) makeLog() PaxosLog {
 // 	return lg.lastLogIndex()
 // }
 
-
 // A Go object implementing a single EPaxos peer.
 type EPaxos struct {
-	lock      			sync.Mutex          				// lock to protect shared access to this peer's state
-	peers     			[]*labrpc.ClientEnd 				// RPC end points of all peers
-	persister 			*Persister          				// Object to hold this peer's persisted state
-	me        			int                 				// this peer's index into peers[]
-	dead      			int32               				// set by Kill()
+	lock      sync.Mutex          // lock to protect shared access to this peer's state
+	peers     []*labrpc.ClientEnd // RPC end points of all peers
+	persister *Persister          // Object to hold this peer's persisted state
+	me        int                 // this peer's index into peers[]
+	dead      int32               // set by Kill()
 	// numPeers  int
 
-	applyCh 			chan<-Instance 						// channel used to send client messages
-	interferenceChecker func(cmd1, cmd2 interface{}) bool	// function passed in by client that checks whether two commands interfere
+	applyCh             chan<- Instance                   // channel used to send client messages
+	interferenceChecker func(cmd1, cmd2 interface{}) bool // function passed in by client that checks whether two commands interfere
 
-	log         		PaxosLog   							// log across all replicas; nested array indexed by replica number, instance number
-	nextIndex 			int	 								// index of next instance to be added to this replica
+	log       PaxosLog // log across all replicas; nested array indexed by replica number, instance number
+	nextIndex int      // index of next instance to be added to this replica
 
-	instanceBallots 	[][]int								// ballot number of each instance in each replica
-	myBallot			int									// ballot number of this replica
+	instanceBallots [][]int // ballot number of each instance in each replica
+	myBallot        int     // ballot number of this replica
 
-	lastApplied 		[]int      							// index of highest log entry known to be applied to state machine
+	lastApplied []int // index of highest log entry known to be applied to state machine
 
 	// so we can run a background goroutine to check if whether any timer has expired so we can step in and run explicit prepare for that instance
-	timers 				[][]time.Time						// time that each instance started processing an RPC
+	timers [][]time.Time // time that each instance started processing an RPC
 
 	// conflicts       []map[string]int // a slice of maps where index i represents replica i & maps the key of command
-										// to the highest conflicting instance # within that replica
+	// to the highest conflicting instance # within that replica
 }
 
 func (e *EPaxos) majority() int {
@@ -116,13 +115,13 @@ func mapsEqual(map1, map2 map[LogIndex]int) bool {
 // takes the union of two maps
 func unionMaps(map1, map2 map[LogIndex]int) map[LogIndex]int {
 	unionMap := make(map[LogIndex]int)
-    for key, value := range map1 {
-        unionMap[key] = value
-    }
-    for key, value := range map2 {
-        unionMap[key] = value
-    }
-    return unionMap
+	for key, value := range map1 {
+		unionMap[key] = value
+	}
+	for key, value := range map2 {
+		unionMap[key] = value
+	}
+	return unionMap
 }
 
 // return currentTerm and whether this server
@@ -151,12 +150,12 @@ func (e *EPaxos) processRequest(cmd interface{}) {
 	// find seq num & deps
 	// assuming every instance depends on the instance before it within a replica
 	maxSeq := 0
-    deps := make(map[LogIndex]int)
+	deps := make(map[LogIndex]int)
 	instances := e.log[e.me]
 	// loop through all instances in replica L
 	for i := len(instances) - 1; i >= 0; i-- {
 		if e.interferenceChecker(cmd, instances[i].Command) {
-			deps[LogIndex{ Replica: e.me, Index: i }] = 1
+			deps[LogIndex{Replica: e.me, Index: i}] = 1
 			if instances[i].Seq > maxSeq {
 				maxSeq = instances[i].Seq
 			}
@@ -164,15 +163,15 @@ func (e *EPaxos) processRequest(cmd interface{}) {
 		}
 	}
 	// seq is larger than seq of all interfering commands in deps
-    seq := maxSeq + 1
+	seq := maxSeq + 1
 	// append to this replica's logs
 	e.log[e.me][instanceNum] = Instance{
-		Deps: deps,
-		Seq: seq,
+		Deps:    deps,
+		Seq:     seq,
 		Command: cmd,
 		Position: LogIndex{
 			Replica: e.me,
-			Index: instanceNum,
+			Index:   instanceNum,
 		},
 		Status: PREACCEPTED,
 	}
@@ -183,7 +182,7 @@ func (e *EPaxos) processRequest(cmd interface{}) {
 
 	// map of responses of RPCs
 	responses := make(map[int]PreAcceptReply)
-    responsesLock := sync.Mutex{}
+	responsesLock := sync.Mutex{}
 
 	// send PreAccept message to fast quorum of replicas (that includes L)
 	for i := 0; i < e.numPeers(); i++ {
@@ -197,10 +196,10 @@ func (e *EPaxos) processRequest(cmd interface{}) {
 	// check if channel fail
 	e.lock.Unlock()
 	select {
-    case <-fail:
+	case <-fail:
 		return // one of the replicas had a higher ballot # so we return
-    default:
-    }
+	default:
+	}
 	e.lock.Lock()
 
 	// check whether all deps & seqs are same
@@ -261,7 +260,7 @@ func (e *EPaxos) processRequest(cmd interface{}) {
 func (e *EPaxos) broadcastPreAccept(peer int, cmd interface{}, deps map[LogIndex]int, seq int, wg *sync.WaitGroup, fail chan bool, responses *map[int]PreAcceptReply, responsesLock *sync.Mutex) {
 	defer wg.Add(-1) // decrement wg
 	for !e.killed() {
-		args := PreAcceptArgs{ Command: cmd, Deps: deps, Seq: seq, Ballot: Ballot{ BallotNum: e.myBallot, ReplicaNum: e.me } }
+		args := PreAcceptArgs{Command: cmd, Deps: deps, Seq: seq, Ballot: Ballot{BallotNum: e.myBallot, ReplicaNum: e.me}}
 		reply := PreAcceptReply{}
 		e.lock.Unlock()
 		ok := e.sendPreAccept(peer, &args, &reply)
@@ -311,7 +310,7 @@ func (e *EPaxos) PreAccept(args *PreAcceptArgs, reply *PreAcceptReply) {
 	instances := e.log[e.me]
 	for i := len(instances) - 1; i >= 0; i-- { // loop through instances of replica R (backwards)
 		if e.interferenceChecker(cmd, instances[i].Command) {
-			depsR[LogIndex{ Replica: e.me, Index: i }] = 1
+			depsR[LogIndex{Replica: e.me, Index: i}] = 1
 			if instances[i].Seq > maxSeq {
 				maxSeq = instances[i].Seq
 			}
@@ -330,11 +329,11 @@ func (e *EPaxos) sendPreAccept(server int, args *PreAcceptArgs, reply *PreAccept
 	return ok
 }
 
-func (e *EPaxos) broadcastAccept(peer int, cmd interface{}, deps map[LogIndex]int, seq int, wg *sync.WaitGroup, fail chan bool, responses *map[int]AcceptReply, responsesLock *sync.Mutex)  {
+func (e *EPaxos) broadcastAccept(peer int, cmd interface{}, deps map[LogIndex]int, seq int, wg *sync.WaitGroup, fail chan bool, responses *map[int]AcceptReply, responsesLock *sync.Mutex) {
 	e.lock.Lock()
 	defer e.lock.Unlock()
 	for !e.killed() {
-		args := AcceptArgs{ Command: cmd, Deps: deps, Seq: seq, Ballot: Ballot{ BallotNum: e.myBallot, ReplicaNum: e.me } }
+		args := AcceptArgs{Command: cmd, Deps: deps, Seq: seq, Ballot: Ballot{BallotNum: e.myBallot, ReplicaNum: e.me}}
 		reply := AcceptReply{}
 		e.lock.Unlock()
 		ok := e.sendAccept(peer, &args, &reply)
@@ -390,7 +389,7 @@ func (e *EPaxos) broadcastCommit(peer int, cmd interface{}, deps map[LogIndex]in
 	e.lock.Lock()
 	defer e.lock.Unlock()
 	for !e.killed() {
-		args := CommitArgs{ Command: cmd, Deps: deps, Seq: seq, Ballot: Ballot{ BallotNum: e.myBallot, ReplicaNum: e.me } }
+		args := CommitArgs{Command: cmd, Deps: deps, Seq: seq, Ballot: Ballot{BallotNum: e.myBallot, ReplicaNum: e.me}}
 		reply := CommitReply{}
 		e.lock.Unlock()
 		ok := e.sendCommit(peer, &args, &reply)
@@ -447,12 +446,12 @@ func (e *EPaxos) sendCommit(server int, args *CommitArgs, reply *CommitReply) bo
 // if it's ever committed. the second return value is the current
 // term. the third return value is true if this server believes it is
 // the leader.
-func (e *EPaxos) Start(command interface{}) int {
+func (e *EPaxos) Start(command interface{}) LogIndex {
 	instanceNum := -1
 
 	// Your code here (3B).
 	if e.killed() == true {
-		return instanceNum
+		return LogIndex{e.me, instanceNum}
 	}
 
 	e.lock.Lock()
@@ -461,7 +460,7 @@ func (e *EPaxos) Start(command interface{}) int {
 	instanceNum = e.nextIndex
 	go e.processRequest(command)
 
-	return instanceNum
+	return LogIndex{e.me, instanceNum}
 }
 
 // the tester doesn't halt goroutines created by Raft after each test,
@@ -484,10 +483,10 @@ func (e *EPaxos) Kill() {
 	// disableLogging()
 }
 
-// func (e *EPaxos) killed() bool {
-// 	z := atomic.LoadInt32(&e.dead)
-// 	return z == 1
-// }
+func (e *EPaxos) killed() bool {
+	z := atomic.LoadInt32(&e.dead)
+	return z == 1
+}
 
 // the service or tester wants to create a Raft server. the ports
 // of all the Raft servers (including this one) are in peers[]. this
