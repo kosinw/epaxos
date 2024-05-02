@@ -79,9 +79,11 @@ func test_scc(n int, e *EPaxos, order []LogIndex) bool {
 	for r := 0; r < len(e.peers); r++ {
 		for i := 0; i < len(e.log[r]); i++ {
 			graph[r*mxedges+i] = make([]int, len(e.log[r][i].Deps))
-			for j, dep := range e.log[r][i].Deps {
+			j := 0
+			for dep, _ := range e.log[r][i].Deps {
 				//	fmt.Printf("instance %v.%v dep: %v.%v\n", r, i, dep.Replica, dep.Index)
 				graph[r*mxedges+i][j] = dep.Replica*mxedges + dep.Index
+				j += 1
 			}
 		}
 	}
@@ -93,7 +95,7 @@ func test_scc(n int, e *EPaxos, order []LogIndex) bool {
 	for r := 0; r < len(e.peers); r++ {
 		for i := 0; i < len(e.log[r]); i++ {
 			//	fmt.Printf("instance %v.%v scc: %v\n", r, i, sccs[r*mxedges+i])
-			for _, dep := range e.log[r][i].Deps {
+			for dep, _ := range e.log[r][i].Deps {
 
 				sccgraph[sccs[r*mxedges+i]][sccs[dep.Replica*mxedges+dep.Index]] = true
 			}

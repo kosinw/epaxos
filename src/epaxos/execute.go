@@ -6,12 +6,6 @@ import (
 	"time"
 )
 
-func (e *EPaxos) killed() bool {
-	return false
-	//z := atomic.LoadInt32(&rf.dead)
-	//return z == 1
-}
-
 func (e *EPaxos) execute() {
 	for !e.killed() {
 		if !e.scc(len(e.peers)) {
@@ -38,16 +32,17 @@ func (e *EPaxos) execDFs(replica int, curr int, disc [][]int, low [][]int, stack
 	*Time = *Time + 1
 	*stack = append(*stack, LogIndex{replica, curr})
 	inStack[replica][curr] = true
-	for _, instance := range e.log[replica][curr].Deps {
+	for instance, _ := range e.log[replica][curr].Deps {
 		//We wait if the dependency is not committed yet
-		for len(e.log[instance.Replica]) <= instance.Index || e.status[instance.Replica][instance.Index] < COMMITTED && !e.killed() {
+		for len(e.log[instance.Replica]) <= instance.Index || e.log[instance.Replica][instance.Index].Status < COMMITTED {
 			e.lock.Unlock()
 			//	fmt.Printf("waiting for %v status %v", instance, e.status[instance.Replica][instance.Index])
 			//ADJUST
 			time.Sleep(1000)
 			e.lock.Lock()
 		}
-		if e.status[instance.Replica][instance.Index] == EXECUTED {
+
+		if e.log[instance.Replica][instance.Index].Status == EXECUTED {
 			continue
 		}
 		// if(!visited[edge.first]){
@@ -83,7 +78,7 @@ func (e *EPaxos) execDFs(replica int, curr int, disc [][]int, low [][]int, stack
 		sort.Slice(sorted, less)
 		for _, instance := range sorted {
 
-			if e.status[instance.Position.Replica][instance.Position.Index] == EXECUTED {
+			if e.log[instance.Position.Replica][instance.Position.Index].Status == EXECUTED {
 				fmt.Printf("ERROR, already executed%v.%v \n", instance.Position.Replica, instance.Position.Index)
 				break
 			}
@@ -91,7 +86,7 @@ func (e *EPaxos) execDFs(replica int, curr int, disc [][]int, low [][]int, stack
 			e.lock.Unlock()
 			e.applyCh <- instance
 			e.lock.Lock()
-			e.status[instance.Position.Replica][instance.Position.Index] = EXECUTED
+			e.log[instance.Position.Replica][instance.Position.Index].Status = EXECUTED
 			executed = true
 		}
 		// sccs[c.Replica][c.Index] = *counter
@@ -127,7 +122,7 @@ func (e *EPaxos) scc(n int) bool {
 	executed := false
 	for R := 0; R < n; R++ {
 		for i := e.lastApplied[R] + 1; i < len(e.log[R]); i++ {
-			if e.status[R][i] == EXECUTED {
+			if e.log[R][i].Status == EXECUTED {
 				e.lastApplied[R] += 1
 				continue
 			}

@@ -156,8 +156,8 @@ func (cfg *config) checkLogs(peer int, m Instance) (string, bool) {
 	for j := 0; j < len(cfg.logs); j++ {
 		if old, oldok := cfg.logs[j][R][i]; oldok && old != v {
 			log.Printf("%v: log %v; server %v\n", peer, cfg.logs[peer], cfg.logs[j])
-			err_msg = fmt.Sprintf("commit instance=%v.%v server=%v %v != server=%v %v",
-				R, i, peer, v, j, old)
+			err_msg = fmt.Sprintf("commit instance=%v server=%v %v != server=%v %v",
+				m.Position, peer, v, j, old)
 		}
 	}
 
@@ -177,7 +177,7 @@ func (cfg *config) applier(i int, applyCh chan Instance) {
 		err_msg, prevok := cfg.checkLogs(i, m)
 		cfg.mu.Unlock()
 		if m.Position.Index > 1 && prevok == false {
-			err_msg = fmt.Sprintf("server %v execute instance out of order %v.%v", i, m.Position.Replica, m.Position.Index)
+			err_msg = fmt.Sprintf("server %v execute instance out of order %v", i, m.Position)
 		}
 		if err_msg != "" {
 			log.Fatalf("apply error: %v", err_msg)
@@ -423,7 +423,7 @@ func (cfg *config) setlongreordering(longrel bool) {
 }
 
 // how many servers think a log entry has been executed?
-func (cfg *config) nCommitted(index LogIndex) (int, interface{}) {
+func (cfg *config) nExecuted(index LogIndex) (int, interface{}) {
 	count := 0
 	var cmd interface{} = nil
 	for i := 0; i < len(cfg.peers); i++ {
@@ -452,7 +452,7 @@ func (cfg *config) nCommitted(index LogIndex) (int, interface{}) {
 func (cfg *config) wait(index LogIndex, n int) interface{} {
 	to := 10 * time.Millisecond
 	for iters := 0; iters < 30; iters++ {
-		nd, _ := cfg.nCommitted(index)
+		nd, _ := cfg.nExecuted(index)
 		if nd >= n {
 			break
 		}
@@ -461,7 +461,7 @@ func (cfg *config) wait(index LogIndex, n int) interface{} {
 			to *= 2
 		}
 	}
-	nd, cmd := cfg.nCommitted(index)
+	nd, cmd := cfg.nExecuted(index)
 	if nd < n {
 		cfg.t.Fatalf("only %d decided for index %d; wanted %d",
 			nd, index, n)
@@ -474,7 +474,7 @@ func (cfg *config) wait(index LogIndex, n int) interface{} {
 // and have to re-submit after giving up.
 // entirely gives up after about 10 seconds.
 // indirectly checks that the servers agree on the
-// same value, since nCommitted() checks this,
+// same value, since nExecuted() checks this,
 // as do the threads that read from applyCh.
 // returns index.
 // if retry==true, may submit the command multiple
@@ -503,7 +503,7 @@ func (cfg *config) one(peer int, cmd interface{}, expectedServers int, retry boo
 
 		t1 := time.Now()
 		for time.Since(t1).Seconds() < 2 {
-			nd, cmd1 := cfg.nCommitted(index)
+			nd, cmd1 := cfg.nExecuted(index)
 			if nd > 0 && nd >= expectedServers {
 				// committed
 				if cmd1 == cmd {
