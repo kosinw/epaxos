@@ -40,14 +40,13 @@ func (e *EPaxos) execDFs(replica int, curr int, disc [][]int, low [][]int, stack
 	inStack[replica][curr] = true
 	for _, instance := range e.log[replica][curr].Deps {
 		//We wait if the dependency is not committed yet
-		for len(e.log[instance.Replica]) <= instance.Index || e.status[instance.Replica][instance.Index] < COMMITTED {
+		for len(e.log[instance.Replica]) <= instance.Index || e.status[instance.Replica][instance.Index] < COMMITTED && !e.killed() {
 			e.lock.Unlock()
 			//	fmt.Printf("waiting for %v status %v", instance, e.status[instance.Replica][instance.Index])
 			//ADJUST
 			time.Sleep(1000)
 			e.lock.Lock()
 		}
-
 		if e.status[instance.Replica][instance.Index] == EXECUTED {
 			continue
 		}

@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"sync"
 	"testing"
+	"time"
 
 	"6.5840/labrpc"
 )
@@ -57,7 +58,7 @@ func TestExecute(t *testing.T) {
 	if !test_scc(n, &e, order) {
 		t.Fail()
 	}
-	fmt.Println("PASSED")
+	fmt.Println("PASSED #2")
 }
 
 func TestExecute2(t *testing.T) {
@@ -87,16 +88,26 @@ func TestExecute2(t *testing.T) {
 	}
 	e.status = [][]Status{
 		{COMMITTED},
-		{COMMITTED, COMMITTED, COMMITTED},
+		{ACCEPTED, COMMITTED, COMMITTED},
 		{COMMITTED},
 		{COMMITTED, COMMITTED},
-		{COMMITTED, COMMITTED},
+		{COMMITTED, ACCEPTED},
 	}
 	e.lastApplied = []int{-1, -1, -1, -1, -1}
 	e.log = graph
 	order := []LogIndex{}
 	go e.scc(len(e.peers))
 	cnt := 0
+	go func() {
+		time.Sleep(100 * time.Millisecond)
+		e.lock.Lock()
+		e.status[1][0] = COMMITTED
+		e.lock.Unlock()
+		time.Sleep(100 * time.Millisecond)
+		e.lock.Lock()
+		e.status[4][1] = COMMITTED
+		e.lock.Unlock()
+	}()
 	for {
 		x := <-apply
 		order = append(order, x.Position)
@@ -109,7 +120,7 @@ func TestExecute2(t *testing.T) {
 	if !test_scc(n, &e, order) {
 		t.Fail()
 	}
-	fmt.Println("PASSED")
+	fmt.Println("PASSED #2")
 }
 func TestSCCChecker(t *testing.T) {
 
