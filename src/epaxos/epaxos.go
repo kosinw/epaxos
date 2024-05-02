@@ -1,23 +1,21 @@
 package epaxos
 
-//
-// this is an outline of the API that raft must expose to
+// This is an outline of the API that EPaxos must expose to
 // the service (or tester). see comments below for
 // each of these functions for more details.
 //
-// rf = Make(...)
-//   create a new Raft server.
-// rf.Start(command interface{}) (index, term, isleader)
+// e = Make(...)
+//   create a new EPaxos server.
+// e.Start(command interface{}) (instanceNum)
 //   start agreement on a new log entry
-// rf.GetState() (term, isLeader)
+// [remove] rf.GetState() (term, isLeader)
 //   ask a Raft for its current term, and whether it thinks it is leader
-// ApplyMsg
-//   each time a new entry is committed to the log, each Raft peer
-//   should send an ApplyMsg to the service (or tester)
-//   in the same server.
-//
+// Instance
+//   each time a new entry is committed to the log, each EPaxos peer
+//   should send an Instance to the service (or tester) in the same server.
 
 import (
+	"fmt"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -47,12 +45,6 @@ func (e *EPaxos) makeLog() PaxosLog {
 // 	}
 // 	return conflicts
 // }
-
-// func (lg *Log) append(term int, command interface{}) int {
-// 	*lg = append(*lg, LogEntry{Index: lg.size(), Term: term, Command: command})
-// 	return lg.lastLogIndex()
-// }
-
 
 // A Go object implementing a single EPaxos peer.
 type EPaxos struct {
@@ -125,25 +117,26 @@ func unionMaps(map1, map2 map[LogIndex]int) map[LogIndex]int {
     return unionMap
 }
 
-// return currentTerm and whether this server
-// believes it is the leader.
-// [TODO] what should GetState return now? maybe don't need
-func (e *EPaxos) GetState() (int, bool) {
-	// Your code here (3A).
+// what should GetState return now? maybe don't need
+// func (e *EPaxos) GetState() (int, bool) {
+// 	// Your code here (3A).
+// 	e.lock.Lock()
+// 	defer e.lock.Unlock()
+
+// 	// return term, isleader
+// 	return 0, false
+// }
+
+// func (e *EPaxos) persist() {
+// }
+
+// func (e *EPaxos) readPersist() {
+// }
+
+func (e *EPaxos) processRequest(cmd interface{}) {
 	e.lock.Lock()
 	defer e.lock.Unlock()
 
-	// return term, isleader
-	return 0, false
-}
-
-func (e *EPaxos) persist() {
-}
-
-func (e *EPaxos) readPersist() {
-}
-
-func (e *EPaxos) processRequest(cmd interface{}) {
 	// increment instance # for this replica, the leader of command cmd
 	instanceNum := e.nextIndex
 	e.nextIndex++
@@ -165,7 +158,10 @@ func (e *EPaxos) processRequest(cmd interface{}) {
 	}
 	// seq is larger than seq of all interfering commands in deps
     seq := maxSeq + 1 
-	// append to this replica's logs
+	// extend this replica, then append to this replica's logs
+	for len(e.log[e.me]) <= instanceNum {
+		e.log[e.me] = append(e.log[e.me], Instance{})
+	}
 	e.log[e.me][instanceNum] = Instance{
 		Deps: deps,
 		Seq: seq,
@@ -177,6 +173,8 @@ func (e *EPaxos) processRequest(cmd interface{}) {
 		Status: PREACCEPTED,
 	}
 
+	fmt.Printf("e.log: %v\n", e.log)
+
 	var wg sync.WaitGroup
 	wg.Add(e.numPeers() / 2) // start with N/2
 	fail := make(chan bool)
@@ -185,23 +183,25 @@ func (e *EPaxos) processRequest(cmd interface{}) {
 	responses := make(map[int]PreAcceptReply)
     responsesLock := sync.Mutex{}
 
-	// send PreAccept message to fast quorum of replicas (that includes L)
+	// send PreAccept message to replicas, wait for fast quorum of replies
 	for i := 0; i < e.numPeers(); i++ {
 		if i == e.me {
 			continue
 		}
 		go e.broadcastPreAccept(i, cmd, deps, seq, &wg, fail, &responses, &responsesLock)
 	}
+	e.lock.Unlock()
 
+	fmt.Printf("finished broadcasting pre-accept messages!\n")
 	wg.Wait() // gotten replies from N/2 + 1 (including self) replicas
 	// check if channel fail
-	e.lock.Unlock()
 	select {
     case <-fail:
 		return // one of the replicas had a higher ballot # so we return
     default:
     }
 	e.lock.Lock()
+	fmt.Printf("reached majority of preaccepts! all logs: %v\n", e.log)
 
 	// check whether all deps & seqs are same
 	sameReplies := true
@@ -259,39 +259,48 @@ func (e *EPaxos) processRequest(cmd interface{}) {
 
 // call when holding e.Lock()
 func (e *EPaxos) broadcastPreAccept(peer int, cmd interface{}, deps map[LogIndex]int, seq int, wg *sync.WaitGroup, fail chan bool, responses *map[int]PreAcceptReply, responsesLock *sync.Mutex) {
+	fmt.Printf("[peer %v] in pre-accept\n", peer)
 	defer wg.Add(-1) // decrement wg
+	e.lock.Lock()
 	for !e.killed() {
+		fmt.Printf("[peer %v] in loop\n", peer)
 		args := PreAcceptArgs{ Command: cmd, Deps: deps, Seq: seq, Ballot: Ballot{ BallotNum: e.myBallot, ReplicaNum: e.me } }
 		reply := PreAcceptReply{}
 		e.lock.Unlock()
 		ok := e.sendPreAccept(peer, &args, &reply)
-		e.lock.Lock()
+		fmt.Printf("[peer %v] result of sendPreAccept: %v\n", peer, ok)
 		if ok {
-			if reply.Success == false {
+			e.lock.Lock()
+			if !reply.Success {
 				fail <- false
 			}
 			responsesLock.Lock()
 			(*responses)[peer] = reply
 			responsesLock.Unlock()
+			fmt.Printf("peer %v replying to PreAccept\n", peer)
+			e.lock.Unlock()
 			return
 		} else { // keep trying if not ok
-			e.lock.Unlock()
+			// e.lock.Unlock()
 			time.Sleep(10 * time.Millisecond)
-			e.lock.Lock()
+			// e.lock.Lock()
 		}
 	}
 }
 
 // PreAccept RPC handler.
 func (e *EPaxos) PreAccept(args *PreAcceptArgs, reply *PreAcceptReply) {
-	e.lock.Lock()
-	defer e.lock.Unlock()
+	// e.lock.Lock()
+	// defer e.lock.Unlock()
 	
+	fmt.Printf("[peer %v] IN PREACCEPT RPC HANDLER \n", e.me)
+
 	ballot := args.Ballot
 	bNum := ballot.BallotNum
 	pos := args.Position
 	instanceInd, replicaInd := pos.Index, pos.Replica
 
+	e.lock.Lock()
 	// [insert helper] if ballot number i receive is smaller than the largest ballot number i've seen so far, reply false
 	if len(e.instanceBallots[e.me]) > instanceInd && bNum < e.instanceBallots[e.me][instanceInd] {
 		reply.Success = false
@@ -318,6 +327,7 @@ func (e *EPaxos) PreAccept(args *PreAcceptArgs, reply *PreAcceptReply) {
 			break // only find latest instance that interferes
 		}
 	}
+	e.lock.Unlock()
 	maxSeq += 1
 	// reply with union of dependencies & new max seq #
 	reply.Deps = unionMaps(depsL, depsR)
@@ -326,6 +336,7 @@ func (e *EPaxos) PreAccept(args *PreAcceptArgs, reply *PreAcceptReply) {
 }
 
 func (e *EPaxos) sendPreAccept(server int, args *PreAcceptArgs, reply *PreAcceptReply) bool {
+	fmt.Printf("sending PreAccept from %v to %v\n", e.me, server)
 	ok := e.peers[server].Call("EPaxos.PreAccept", args, reply)
 	return ok
 }
@@ -340,7 +351,7 @@ func (e *EPaxos) broadcastAccept(peer int, cmd interface{}, deps map[LogIndex]in
 		ok := e.sendAccept(peer, &args, &reply)
 		e.lock.Lock()
 		if ok {
-			if reply.Success == false {
+			if !reply.Success {
 				fail <- false
 			}
 			responsesLock.Lock()
@@ -447,12 +458,12 @@ func (e *EPaxos) sendCommit(server int, args *CommitArgs, reply *CommitReply) bo
 // if it's ever committed. the second return value is the current
 // term. the third return value is true if this server believes it is
 // the leader.
-func (e *EPaxos) Start(command interface{}) int {
+func (e *EPaxos) Start(command interface{}) LogIndex {
 	instanceNum := -1
 
 	// Your code here (3B).
-	if e.killed() == true {
-		return instanceNum
+	if e.killed() {
+		return LogIndex{ Replica: e.me, Index: instanceNum }
 	}
 
 	e.lock.Lock()
@@ -461,7 +472,7 @@ func (e *EPaxos) Start(command interface{}) int {
 	instanceNum = e.nextIndex
 	go e.processRequest(command)
 
-	return instanceNum
+	return LogIndex{ Replica: e.me, Index: instanceNum }
 }
 
 // the tester doesn't halt goroutines created by Raft after each test,
