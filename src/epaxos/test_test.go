@@ -9,6 +9,7 @@ package epaxos
 
 import "testing"
 import "time"
+import "sync"
 
 // import "fmt"
 // import "math/rand"
@@ -38,6 +39,15 @@ func interferes(cmd1, cmd2 interface{}) bool {
 	if v1, ok1 := cmd1.(testCommand); ok1 {
 		if v2, ok2 := cmd2.(testCommand); ok2 {
 			return (v1.Op == "PUT" || v2.Op == "PUT") && v1.Key == v2.Key
+		}
+	}
+	return false
+}
+
+func interferesInt(cmd1, cmd2 interface{}) bool {
+	if v1, ok1 := cmd1.(int); ok1 {
+		if v2, ok2 := cmd2.(int); ok2 {
+			return v1 == v2
 		}
 	}
 	return false
@@ -112,7 +122,7 @@ func TestRPCBytes3B(t *testing.T) {
 	got := bytes1 - bytes0
 
 	// TODO(kosinw): I don't know if this is a good number since its based on Raft?
-	expected := int64(servers) * sent + 50000
+	expected := int64(servers)*sent + 50000
 
 	if got > expected+50000 {
 		t.Fatalf("too many RPC bytes; got %v, expected %v", got, expected)
@@ -124,7 +134,7 @@ func TestRPCBytes3B(t *testing.T) {
 func TestReplicaFailure3B(t *testing.T) {
 	const (
 		servers = 3
-		leader = 0
+		leader  = 0
 	)
 
 	cfg := make_config(t, servers, false, interferes)
@@ -140,14 +150,14 @@ func TestReplicaFailure3B(t *testing.T) {
 	cfg.disconnect(leader)
 
 	// the two remaining replicas should be able to agree
-	cfg.one((leader + 2) % servers, makePutCommand(102), servers-1, false)
-	cfg.one((leader + 1) % servers, makePutCommand(103), servers-1, false)
+	cfg.one((leader+2)%servers, makePutCommand(102), servers-1, false)
+	cfg.one((leader+1)%servers, makePutCommand(103), servers-1, false)
 
 	// disconnect another replica
 	cfg.disconnect((leader + 2))
 
 	// submit a command to each server, make sure their instances
-	index := cfg.peers[leader + 1].Start(makePutCommand(104))
+	index := cfg.peers[leader+1].Start(makePutCommand(104))
 
 	if index.Replica != leader+1 && index.Index != 1 {
 		t.Fatalf("expected instance %v.1, instead got %v", leader+1, index)
@@ -156,7 +166,7 @@ func TestReplicaFailure3B(t *testing.T) {
 	time.Sleep(2000 * time.Second)
 
 	// Check that the command did not execute.
-	n, _ := cfg.nExecuted(LogIndex{Replica: leader+1, Index: 1})
+	n, _ := cfg.nExecuted(LogIndex{Replica: leader + 1, Index: 1})
 
 	if n > 0 {
 		t.Fatalf("%v executed, but no quorum", n)
@@ -164,3 +174,150 @@ func TestReplicaFailure3B(t *testing.T) {
 
 	cfg.end()
 }
+
+// test that a replica participates after
+// disconnect and re-connect.
+func TestFailAgree3B(t *testing.T) {
+	const (
+		servers = 3
+		leader  = 2
+	)
+
+	cfg := make_config(t, servers, false, interferes)
+	defer cfg.cleanup()
+
+	cfg.begin("Test (3B): agreement after replica reconnects")
+
+	cfg.one(leader, makePutCommand(101), servers, false)
+
+	cfg.disconnect((leader + 1) % servers)
+
+	cfg.one(leader, makePutCommand(102), servers-1, false)
+	cfg.one(leader, makePutCommand(103), servers-1, false)
+	cfg.one(leader, makePutCommand(104), servers-1, false)
+	cfg.one(leader, makePutCommand(105), servers-1, false)
+
+	cfg.connect((leader + 1) % servers)
+
+	cfg.one(leader, makePutCommand(106), servers, true)
+	cfg.one(leader, makePutCommand(107), servers, true)
+
+	cfg.end()
+}
+
+func TestFailNoAgree3B(t *testing.T) {
+	const (
+		servers = 5
+		leader  = 3
+	)
+
+	cfg := make_config(t, servers, false, interferes)
+	defer cfg.cleanup()
+
+	cfg.begin("Test (3B): no agreement if too many replicas disconnect")
+
+	cfg.one(leader, makePutCommand(10), servers, false)
+
+	cfg.disconnect((leader + 1) % servers)
+	cfg.disconnect((leader + 2) % servers)
+	cfg.disconnect((leader + 3) % servers)
+
+	// submit a command to each server, make sure their instances
+	index := cfg.peers[leader].Start(makePutCommand(104))
+
+	if index.Replica != leader && index.Index != 1 {
+		t.Fatalf("expected instance %v.1, instead got %v", leader, index)
+	}
+
+	time.Sleep(2000 * time.Second)
+
+	// Check that the command did not execute.
+	n, _ := cfg.nExecuted(LogIndex{Replica: leader + 1, Index: 1})
+
+	if n > 0 {
+		t.Fatalf("%v executed, but no quorum", n)
+	}
+
+	// repair
+	cfg.connect((leader + 1) % servers)
+	cfg.connect((leader + 2) % servers)
+	cfg.connect((leader + 3) % servers)
+
+	cfg.one(leader, makePutCommand(1000), servers, true)
+
+	cfg.end()
+}
+
+func TestConcurrentStarts3B(t *testing.T) {
+	const (
+		servers = 3
+		iters   = 5
+	)
+
+	cfg := make_config(t, servers, false, interferesInt)
+	defer cfg.cleanup()
+
+	cfg.begin("Test (3B): concurrent Start()s")
+
+	for try := 0; try < 5; try++ {
+		if try > 0 {
+			time.Sleep(3 * time.Second)
+		}
+
+		cfg.peers[0].Start(1)
+
+		var wg sync.WaitGroup
+		is := make(chan LogIndex, iters)
+
+		for ii := 0; ii < iters; ii++ {
+			wg.Add(1)
+
+			go func(i int) {
+				defer wg.Done()
+				ix := cfg.peers[(i+1)%servers].Start(100 + i)
+				is <- ix
+			}(ii)
+		}
+
+		wg.Wait()
+		close(is)
+
+		cmds := []int{}
+		for index := range is {
+			cmd := cfg.wait(index, servers)
+			if ix, ok := cmd.(int); ok {
+				cmds = append(cmds, ix)
+			} else {
+				t.Fatalf("value %v is not an int", cmd)
+			}
+		}
+
+		for ii := 0; ii < iters; ii++ {
+			x := 100 + ii
+			ok := false
+			for j := 0; j < len(cmds); j++ {
+				if cmds[j] == x {
+					ok = true
+				}
+			}
+			if ok == false {
+				t.Fatalf("cmd %v missing in %v", x, cmds)
+			}
+		}
+	}
+
+	cfg.end()
+}
+
+// func TestRejoin3B(t *testing.T) {
+// 	const (
+// 		servers = 3
+// 	)
+
+// 	cfg := make_config(t, servers, false, interferes)
+// 	defer cfg.cleanup()
+
+// 	cfg.begin("Test (3B): rejoin of partitioned server")
+
+// 	cfg.one()
+// }
