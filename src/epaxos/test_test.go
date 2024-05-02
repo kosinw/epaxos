@@ -408,9 +408,3 @@ func TestBackup3B(t *testing.T) {
 
 	cfg.end()
 }
-
-func TestCount3B(t *testing.T) {
-	const (
-		servers = 3
-	)
-}
