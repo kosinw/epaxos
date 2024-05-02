@@ -140,7 +140,6 @@ func unionMaps(map1, map2 map[LogIndex]int) map[LogIndex]int {
 
 func (e *EPaxos) processRequest(cmd interface{}) {
 	e.lock.Lock()
-	defer e.lock.Unlock()
 
 	// increment instance # for this replica, the leader of command cmd
 	instanceNum := e.nextIndex
@@ -180,8 +179,7 @@ func (e *EPaxos) processRequest(cmd interface{}) {
 
 	fmt.Printf("e.log: %v\n", e.log)
 
-	var wg sync.WaitGroup
-	wg.Add(e.numPeers() / 2) // start with N/2
+	numPreAcceptResponses := 0
 	fail := make(chan bool)
 
 	// map of responses of RPCs
@@ -193,12 +191,21 @@ func (e *EPaxos) processRequest(cmd interface{}) {
 		if i == e.me {
 			continue
 		}
-		go e.broadcastPreAccept(i, cmd, deps, seq, &wg, fail, &responses, &responsesLock)
+		go e.broadcastPreAccept(i, cmd, deps, seq, &numPreAcceptResponses, fail, &responses, &responsesLock)
 	}
 	e.lock.Unlock()
 
 	fmt.Printf("finished broadcasting pre-accept messages!\n")
-	wg.Wait() // gotten replies from N/2 + 1 (including self) replicas
+	// wg.Wait() // gotten replies from N/2 + 1 (including self) replicas
+
+	for !e.killed() {
+		fmt.Printf("numPreAcceptResponses: %v\n", numPreAcceptResponses)
+		if numPreAcceptResponses >= e.numPeers() / 2 {
+			break
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+
 	// check if channel fail
 	select {
 	case <-fail:
@@ -214,18 +221,22 @@ func (e *EPaxos) processRequest(cmd interface{}) {
 	unionedDeps := deps
 	// only qualifies for fast path if at least N - 2 responses match
 	if len(responses) < e.numFastPath() {
+		fmt.Printf("don't have numFastPath %v responses, only have %v\n", e.numFastPath(), len(responses))
 		sameReplies = false
-	}
-	for _, response := range responses {
-		if !response.Success || !mapsEqual(deps, response.Deps) || seq != response.Seq {
-			sameReplies = false
+	} else {
+		for _, response := range responses {
+			fmt.Printf("looping through responses, on response %v\n", response)
+			if !response.Success || !mapsEqual(deps, response.Deps) || seq != response.Seq {
+				sameReplies = false
+			}
+			// find max seq & unioned deps
+			unionedSeq = max(unionedSeq, response.Seq)
+			unionedDeps = unionMaps(unionedDeps, response.Deps)
 		}
-		// find max seq & unioned deps
-		unionedSeq = max(unionedSeq, response.Seq)
-		unionedDeps = unionMaps(unionedDeps, response.Deps)
 	}
 	// run commit phase
 	if sameReplies {
+		fmt.Printf("all replies are same.. running commit\n")
 		for i := 0; i < e.numPeers(); i++ {
 			if i == e.me {
 				continue
@@ -234,8 +245,8 @@ func (e *EPaxos) processRequest(cmd interface{}) {
 			go e.broadcastCommit(i, cmd, deps, seq)
 		}
 	} else {
-		var acceptWg sync.WaitGroup
-		acceptWg.Add(e.numPeers() / 2) // start with N/2
+		fmt.Printf("either not enough replies or not all replies are same.. running accept\n")
+		numAcceptResponses := 0
 		acceptFail := make(chan bool)
 		acceptResponses := make(map[int]AcceptReply)
 		acceptResponsesLock := sync.Mutex{}
@@ -246,26 +257,39 @@ func (e *EPaxos) processRequest(cmd interface{}) {
 				continue
 			}
 			e.log[e.me][instanceNum].Status = ACCEPTED
-			go e.broadcastAccept(i, cmd, unionedDeps, unionedSeq, &acceptWg, acceptFail, &acceptResponses, &acceptResponsesLock)
+			fmt.Printf("broadcasting accept messages...\n")
+			go e.broadcastAccept(i, cmd, unionedDeps, unionedSeq, &numAcceptResponses, acceptFail, &acceptResponses, &acceptResponsesLock)
 		}
+		e.lock.Unlock()
 
-		acceptWg.Wait()
+		for !e.killed() {
+			if numAcceptResponses >= e.numPeers() / 2 {
+				break
+			}
+			time.Sleep(10 * time.Millisecond)
+		}
+		fmt.Printf("reached majority of accepts! all logs: %v\n", e.log)
+
 		// run commit phase
+		e.lock.Lock()
 		for i := 0; i < e.numPeers(); i++ {
 			if i == e.me {
 				continue
 			}
 			e.log[e.me][instanceNum].Status = COMMITTED
+			fmt.Printf("broadcasting commit messages...\n")
 			go e.broadcastCommit(i, cmd, unionedDeps, unionedSeq)
 		}
+		e.lock.Unlock()
 	}
+	fmt.Printf("finished processing request %v! should be committed\n", cmd)
+	fmt.Printf("e.log after %v\n", e.log)
 	// [TODO] send RequestReply to client?
 }
 
 // call when holding e.Lock()
-func (e *EPaxos) broadcastPreAccept(peer int, cmd interface{}, deps map[LogIndex]int, seq int, wg *sync.WaitGroup, fail chan bool, responses *map[int]PreAcceptReply, responsesLock *sync.Mutex) {
-	fmt.Printf("[peer %v] in pre-accept\n", peer)
-	defer wg.Add(-1) // decrement wg
+func (e *EPaxos) broadcastPreAccept(peer int, cmd interface{}, deps map[LogIndex]int, seq int, numResponses *int, fail chan bool, responses *map[int]PreAcceptReply, responsesLock *sync.Mutex) {
+	// fmt.Printf("[peer %v] in pre-accept\n", peer)
 	e.lock.Lock()
 	for !e.killed() {
 		fmt.Printf("[peer %v] in loop\n", peer)
@@ -283,12 +307,12 @@ func (e *EPaxos) broadcastPreAccept(peer int, cmd interface{}, deps map[LogIndex
 			(*responses)[peer] = reply
 			responsesLock.Unlock()
 			fmt.Printf("peer %v replying to PreAccept\n", peer)
+			*numResponses++
+			fmt.Printf("peer %v numResponses: %v\n", peer, numResponses)
 			e.lock.Unlock()
 			return
 		} else { // keep trying if not ok
-			// e.lock.Unlock()
 			time.Sleep(10 * time.Millisecond)
-			// e.lock.Lock()
 		}
 	}
 }
@@ -299,7 +323,6 @@ func (e *EPaxos) PreAccept(args *PreAcceptArgs, reply *PreAcceptReply) {
 	// defer e.lock.Unlock()
 
 	fmt.Printf("[peer %v] IN PREACCEPT RPC HANDLER \n", e.me)
-
 	ballot := args.Ballot
 	bNum := ballot.BallotNum
 	pos := args.Position
@@ -334,8 +357,26 @@ func (e *EPaxos) PreAccept(args *PreAcceptArgs, reply *PreAcceptReply) {
 	}
 	e.lock.Unlock()
 	maxSeq += 1
+
+	fmt.Printf("[peer %v preaccept] e.log %v", e.me, e.log)
+	
+	unionedDeps := unionMaps(depsL, depsR)
+	// extend this replica, then append to this replica's logs
+	for len(e.log[e.me]) <= instanceInd {
+		e.log[e.me] = append(e.log[e.me], Instance{})
+	}	
+	e.log[e.me][instanceInd] = Instance{
+		Deps: depsR,
+		Seq: maxSeq,
+		Command: cmd,
+		Position: LogIndex{
+			Replica: e.me,
+			Index: instanceInd,
+		},
+		Status: PREACCEPTED,
+	}
 	// reply with union of dependencies & new max seq #
-	reply.Deps = unionMaps(depsL, depsR)
+	reply.Deps = unionedDeps
 	reply.Seq = maxSeq
 	reply.Success = true
 }
@@ -346,27 +387,27 @@ func (e *EPaxos) sendPreAccept(server int, args *PreAcceptArgs, reply *PreAccept
 	return ok
 }
 
-func (e *EPaxos) broadcastAccept(peer int, cmd interface{}, deps map[LogIndex]int, seq int, wg *sync.WaitGroup, fail chan bool, responses *map[int]AcceptReply, responsesLock *sync.Mutex) {
+func (e *EPaxos) broadcastAccept(peer int, cmd interface{}, deps map[LogIndex]int, seq int, numAcceptResponses *int, fail chan bool, responses *map[int]AcceptReply, responsesLock *sync.Mutex) {
 	e.lock.Lock()
-	defer e.lock.Unlock()
 	for !e.killed() {
 		args := AcceptArgs{Command: cmd, Deps: deps, Seq: seq, Ballot: Ballot{BallotNum: e.myBallot, ReplicaNum: e.me}}
 		reply := AcceptReply{}
 		e.lock.Unlock()
 		ok := e.sendAccept(peer, &args, &reply)
-		e.lock.Lock()
+		fmt.Printf("[peer %v] result of sendAccept: %v\n", peer, ok)
 		if ok {
+			e.lock.Lock()
 			if !reply.Success {
 				fail <- false
 			}
 			responsesLock.Lock()
 			(*responses)[peer] = reply
 			responsesLock.Unlock()
+			*numAcceptResponses++
+			e.lock.Unlock()
 			return
 		} else { // keep trying if not ok
-			e.lock.Unlock()
 			time.Sleep(10 * time.Millisecond)
-			e.lock.Lock()
 		}
 	}
 }
@@ -404,19 +445,21 @@ func (e *EPaxos) sendAccept(server int, args *AcceptArgs, reply *AcceptReply) bo
 
 func (e *EPaxos) broadcastCommit(peer int, cmd interface{}, deps map[LogIndex]int, seq int) {
 	e.lock.Lock()
-	defer e.lock.Unlock()
+	// defer e.lock.Unlock()
 	for !e.killed() {
-		args := CommitArgs{Command: cmd, Deps: deps, Seq: seq, Ballot: Ballot{BallotNum: e.myBallot, ReplicaNum: e.me}}
+		fmt.Printf("[peer %v] inBroadcastCommit\n", peer)
+		args := CommitArgs{ Command: cmd, Deps: deps, Seq: seq, Ballot: Ballot{ BallotNum: e.myBallot, ReplicaNum: e.me } }
 		reply := CommitReply{}
 		e.lock.Unlock()
 		ok := e.sendCommit(peer, &args, &reply)
-		e.lock.Lock()
+		fmt.Printf("[peer %v] result of Commit: %v\n", peer, ok)
+		// e.lock.Lock()
 		if ok {
 			return
 		} else { // keep trying if not ok
-			e.lock.Unlock()
+			// e.lock.Unlock()
 			time.Sleep(10 * time.Millisecond)
-			e.lock.Lock()
+			// e.lock.Lock()
 		}
 	}
 }
@@ -535,8 +578,6 @@ func Make(peers []*labrpc.ClientEnd, me int, persister *Persister, applyCh chan 
 
 	e.lastApplied = make([]int, len(peers))
 	e.timers = make([][]time.Time, len(peers))
-
-	// e.conflicts = e.makeConflictsMap()
 
 	// print out what state we are starting at
 	// debug(
