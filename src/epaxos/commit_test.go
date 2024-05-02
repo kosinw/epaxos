@@ -7,12 +7,12 @@ import (
 )
 
 func interferes(cmd1, cmd2 interface{}) bool {
-	return true;
+	return true
 }
 
 func checkCommitted(log PaxosLog, cmd interface{}, commitIndex int) bool {
 	committed := true
-	for _, sublog := range(log) {
+	for _, sublog := range log {
 		if len(sublog) <= commitIndex {
 			committed = false
 			break
@@ -46,6 +46,6 @@ func TestBasicCommit(t *testing.T) {
 		}
 		time.Sleep(10 * time.Millisecond)
 	}
-	
-	fmt.Printf("e's log after 30 iters: %v\n", e.log)	
+
+	fmt.Printf("e's log after 30 iters: %v\n", e.log)
 }

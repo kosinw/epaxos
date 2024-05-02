@@ -32,7 +32,7 @@ func (e *EPaxos) execute() {
 func (e *EPaxos) execDFs(replica int, curr int, disc [][]int, low [][]int, stack *[]LogIndex, inStack [][]bool, parents [][]Instance, Time *int, sccs [][]int, counter *int) bool {
 	executed := false
 	//  visited[curr]=true;
-	fmt.Printf("visiting replica %v index %v \n", replica, curr)
+	//fmt.Printf("visiting replica %v index %v \n", replica, curr)
 	low[replica][curr] = *Time
 	disc[replica][curr] = low[replica][curr]
 	*Time = *Time + 1
@@ -42,18 +42,19 @@ func (e *EPaxos) execDFs(replica int, curr int, disc [][]int, low [][]int, stack
 		//We wait if the dependency is not committed yet
 		for len(e.log[instance.Replica]) <= instance.Index || e.status[instance.Replica][instance.Index] < COMMITTED {
 			e.lock.Unlock()
-			fmt.Printf("waiting for %v status %v", instance, e.status[instance.Replica][instance.Index])
+			//	fmt.Printf("waiting for %v status %v", instance, e.status[instance.Replica][instance.Index])
 			//ADJUST
 			time.Sleep(1000)
 			e.lock.Lock()
 		}
+
 		if e.status[instance.Replica][instance.Index] == EXECUTED {
 			continue
 		}
 		// if(!visited[edge.first]){
 		if disc[instance.Replica][instance.Index] == -1 {
 			parents[instance.Replica][instance.Index] = e.log[instance.Replica][instance.Index]
-			executed = executed || e.execDFs(instance.Replica, instance.Index, disc, low, stack, inStack, parents, Time, sccs, counter)
+			executed = e.execDFs(instance.Replica, instance.Index, disc, low, stack, inStack, parents, Time, sccs, counter) || executed
 			low[replica][curr] = min(low[replica][curr], low[instance.Replica][instance.Index])
 		} else if inStack[instance.Replica][instance.Index] {
 			low[replica][curr] = min(low[replica][curr], disc[instance.Replica][instance.Index])
@@ -61,7 +62,7 @@ func (e *EPaxos) execDFs(replica int, curr int, disc [][]int, low [][]int, stack
 	}
 	//if curr is head of its own subtree it is end of connected component
 	if disc[replica][curr] == low[replica][curr] {
-		fmt.Printf("head %v index %v: \n", replica, curr)
+		//	fmt.Printf("head %v index %v: \n", replica, curr)
 		sorted := make([]Instance, 0)
 		c := (*stack)[len(*stack)-1]
 		for {
@@ -70,7 +71,7 @@ func (e *EPaxos) execDFs(replica int, curr int, disc [][]int, low [][]int, stack
 			inStack[c.Replica][c.Index] = false
 			sorted = append(sorted, e.log[c.Replica][c.Index])
 			*stack = (*stack)[:len(*stack)-1]
-			fmt.Printf("in comp: %v \n", c)
+			//	fmt.Printf("in comp: %v \n", c)
 			if c.Replica == replica && c.Index == curr {
 				break
 			}
@@ -87,7 +88,7 @@ func (e *EPaxos) execDFs(replica int, curr int, disc [][]int, low [][]int, stack
 				fmt.Printf("ERROR, already executed%v.%v \n", instance.Position.Replica, instance.Position.Index)
 				break
 			}
-			fmt.Printf("Executing %v.%v \n", instance.Position.Replica, instance.Position.Index)
+			//	fmt.Printf("Executing %v.%v \n", instance.Position.Replica, instance.Position.Index)
 			e.lock.Unlock()
 			e.applyCh <- instance
 			e.lock.Lock()
@@ -127,13 +128,15 @@ func (e *EPaxos) scc(n int) bool {
 	executed := false
 	for R := 0; R < n; R++ {
 		for i := e.lastApplied[R] + 1; i < len(e.log[R]); i++ {
-			//  if(!visited[i]){
+			if e.status[R][i] == EXECUTED {
+				e.lastApplied[R] += 1
+				continue
+			}
 			if disc[R][i] == -1 {
 
-				executed = executed || e.execDFs(R, i, disc, low, &stack, inStack, parents, &Time, sccs, &counter)
-			} else {
-				fmt.Printf("visited replica %v index %v \n", R, i)
+				executed = e.execDFs(R, i, disc, low, &stack, inStack, parents, &Time, sccs, &counter) || executed
 			}
+
 		}
 	}
 	return executed
