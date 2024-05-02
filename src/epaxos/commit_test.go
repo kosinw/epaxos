@@ -7,13 +7,19 @@ import (
 )
 
 func interferes(cmd1, cmd2 interface{}) bool {
-	return true;
+	return true
 }
 
 func checkCommitted(peers []*EPaxos, cmd interface{}, commitIndex int) bool {
 	committed := true
+<<<<<<< HEAD
 	for peerInd, peer := range(peers) {
 		sublog := peer.log[peerInd]
+||||||| 492b615
+	for _, sublog := range(log) {
+=======
+	for _, sublog := range log {
+>>>>>>> 8aca8b5857be87296f38f5f068bda552f36f85b3
 		if len(sublog) <= commitIndex {
 			fmt.Printf("[%v] len(sublog) %v <= commitIndex %v\n", peerInd, len(sublog), commitIndex)
 			committed = false
