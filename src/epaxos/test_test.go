@@ -10,9 +10,9 @@ package epaxos
 import "testing"
 import "time"
 import "sync"
+import "math/rand"
 
 // import "fmt"
-// import "math/rand"
 // import "sync/atomic"
 // import "sync"
 
@@ -309,15 +309,108 @@ func TestConcurrentStarts3B(t *testing.T) {
 	cfg.end()
 }
 
-// func TestRejoin3B(t *testing.T) {
-// 	const (
-// 		servers = 3
-// 	)
+func TestRejoin3B(t *testing.T) {
+	const (
+		servers = 3
+		leader1 = 0
+		leader2 = 1
+		leader3 = 2
+	)
 
-// 	cfg := make_config(t, servers, false, interferes)
-// 	defer cfg.cleanup()
+	cfg := make_config(t, servers, false, interferesInt)
+	defer cfg.cleanup()
 
-// 	cfg.begin("Test (3B): rejoin of partitioned server")
+	cfg.begin("Test (3B): rejoin of partitioned server")
 
-// 	cfg.one()
-// }
+	cfg.one(leader1, 101, servers, true)
+	cfg.disconnect(leader1)
+	cfg.peers[leader1].Start(102)
+	cfg.peers[leader1].Start(103)
+	cfg.peers[leader1].Start(104)
+
+	cfg.one(leader2, 103, servers-1, true)
+	cfg.disconnect(leader2)
+
+	cfg.connect(leader1)
+
+	cfg.one(leader3, 104, servers-1, true)
+	cfg.connect(leader2)
+
+	cfg.one(leader1, 105, servers, true)
+
+	cfg.end()
+}
+
+func TestBackup3B(t *testing.T) {
+	const (
+		servers = 5
+		leader1 = 0
+		leader2 = 1
+	)
+
+	cfg := make_config(t, servers, false, interferesInt)
+	defer cfg.cleanup()
+
+	cfg.begin("Test (3B): replica backs up quickly")
+
+	cfg.one(leader1, rand.Int(), servers, true)
+
+	cfg.disconnect((leader1 + 2) % servers)
+	cfg.disconnect((leader1 + 3) % servers)
+	cfg.disconnect((leader1 + 4) % servers)
+
+	for i := 0; i < 50; i++ {
+		cfg.peers[leader1].Start(rand.Int())
+	}
+
+	time.Sleep(500 * time.Millisecond)
+
+	cfg.disconnect((leader1 + 0) % servers)
+	cfg.disconnect((leader1 + 1) % servers)
+
+	cfg.connect((leader1 + 2) % servers)
+	cfg.connect((leader1 + 3) % servers)
+	cfg.connect((leader1 + 4) % servers)
+
+	for i := 0; i < 50; i++ {
+		cfg.one(leader2, rand.Int(), 3, true)
+	}
+
+	other := (leader1 + 2) % servers
+	if leader2 == other {
+		other = (leader2 + 1) % servers
+	}
+	cfg.disconnect(other)
+
+	for i := 0; i < 50; i++ {
+		cfg.peers[leader2].Start(rand.Int())
+	}
+
+	time.Sleep(500 * time.Millisecond)
+
+	for i := 0; i < servers; i++ {
+		cfg.disconnect(i)
+	}
+
+	cfg.connect((leader1 + 0) % servers)
+	cfg.connect((leader1 + 1) % servers)
+	cfg.connect(other)
+
+	for i := 0; i < 50; i++ {
+		cfg.one(leader1, rand.Int(), 3, true)
+	}
+
+	for i := 0; i < servers; i++ {
+		cfg.connect(i)
+	}
+
+	cfg.one(leader1, rand.Int(), servers, true)
+
+	cfg.end()
+}
+
+func TestCount3B(t *testing.T) {
+	const (
+		servers = 3
+	)
+}
