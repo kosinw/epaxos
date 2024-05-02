@@ -387,7 +387,7 @@ func (e *EPaxos) sendPreAccept(server int, args *PreAcceptArgs, reply *PreAccept
 	return ok
 }
 
-func (e *EPaxos) broadcastAccept(peer int, cmd interface{}, deps map[LogIndex]int, seq int, wg *sync.WaitGroup, fail chan bool, responses *map[int]AcceptReply, responsesLock *sync.Mutex) {
+func (e *EPaxos) broadcastAccept(peer int, cmd interface{}, deps map[LogIndex]int, seq int, numAcceptResponses *int, fail chan bool, responses *map[int]AcceptReply, responsesLock *sync.Mutex) {
 	e.lock.Lock()
 	for !e.killed() {
 		args := AcceptArgs{Command: cmd, Deps: deps, Seq: seq, Ballot: Ballot{BallotNum: e.myBallot, ReplicaNum: e.me}}
@@ -403,7 +403,7 @@ func (e *EPaxos) broadcastAccept(peer int, cmd interface{}, deps map[LogIndex]in
 			responsesLock.Lock()
 			(*responses)[peer] = reply
 			responsesLock.Unlock()
-			*numResponses++
+			*numAcceptResponses++
 			e.lock.Unlock()
 			return
 		} else { // keep trying if not ok
