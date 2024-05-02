@@ -16,41 +16,8 @@ import "math/rand"
 // import "sync/atomic"
 // import "sync"
 
-type testCommand struct {
-	Key interface{}
-	Op  string
-}
-
-func makePutCommand(key interface{}) testCommand {
-	return testCommand{
-		Key: key,
-		Op:  "PUT",
-	}
-}
-
-func makeGetCommand(key interface{}) testCommand {
-	return testCommand{
-		Key: key,
-		Op:  "GET",
-	}
-}
-
-func interferesTestCommand(cmd1, cmd2 interface{}) bool {
-	if v1, ok1 := cmd1.(testCommand); ok1 {
-		if v2, ok2 := cmd2.(testCommand); ok2 {
-			return (v1.Op == "PUT" || v2.Op == "PUT") && v1.Key == v2.Key
-		}
-	}
-	return false
-}
-
-func interferesInt(cmd1, cmd2 interface{}) bool {
-	if v1, ok1 := cmd1.(int); ok1 {
-		if v2, ok2 := cmd2.(int); ok2 {
-			return v1 == v2
-		}
-	}
-	return false
+func interferes1(cmd1, cmd2 interface{}) bool {
+	return cmd1 == cmd2
 }
 
 // check to see if we can successfully replicate
@@ -61,12 +28,12 @@ func TestBasicAgree3B(t *testing.T) {
 		iters   = 3
 	)
 
-	cfg := make_config(t, servers, false, interferesTestCommand)
+	cfg := make_config(t, servers, false, interferes1)
 	defer cfg.cleanup()
 
 	cfg.begin("Test (3B): basic agreement")
 
-	key := randstring(5000)
+	key := randstring(5)
 
 	for r := 0; r < servers; r++ {
 		for i := 0; i < iters; i++ {
@@ -77,7 +44,7 @@ func TestBasicAgree3B(t *testing.T) {
 				t.Fatalf("some have committed before Start()")
 			}
 
-			xindex := cfg.one(r, makePutCommand(key), servers, false)
+			xindex := cfg.one(r, key, servers, false)
 			if xindex != index {
 				t.Fatalf("got instance number %v but expected %v", xindex, index)
 			}
@@ -96,20 +63,20 @@ func TestRPCBytes3B(t *testing.T) {
 		leader  = 0
 	)
 
-	cfg := make_config(t, servers, false, interferesTestCommand)
+	cfg := make_config(t, servers, false, interferes1)
 	defer cfg.cleanup()
 
 	cfg.begin("Test (3B): RPC byte count")
 
-	cfg.one(leader, makePutCommand(99), servers, false)
+	cfg.one(leader, 99, servers, false)
 	bytes0 := cfg.bytesTotal()
 
 	var sent int64 = 0
 
 	for i := 1; i < iters+1; i++ {
-		cmd := randstring(5000)
+		cmd := randstring(5)
 		index := LogIndex{Replica: leader, Index: i}
-		xindex := cfg.one(leader, makeGetCommand(cmd), servers, false)
+		xindex := cfg.one(leader, cmd, servers, false)
 
 		if xindex != index {
 			t.Fatalf("got instance %v but expected %v", xindex, index)
@@ -137,12 +104,12 @@ func TestReplicaFailure3B(t *testing.T) {
 		leader  = 0
 	)
 
-	cfg := make_config(t, servers, false, interferesTestCommand)
+	cfg := make_config(t, servers, false, interferes1)
 	defer cfg.cleanup()
 
 	cfg.begin("Test (3B): test progressive failure of replicas")
 
-	if x := cfg.one(leader, makePutCommand(101), servers, false); x != (LogIndex{leader, 0}) {
+	if x := cfg.one(leader, 101, servers, false); x != (LogIndex{leader, 0}) {
 		t.Fatalf("expected instance %v.0, instead got %v", leader, x)
 	}
 
@@ -150,14 +117,14 @@ func TestReplicaFailure3B(t *testing.T) {
 	cfg.disconnect(leader)
 
 	// the two remaining replicas should be able to agree
-	cfg.one((leader+2)%servers, makePutCommand(102), servers-1, false)
-	cfg.one((leader+1)%servers, makePutCommand(103), servers-1, false)
+	cfg.one((leader+2)%servers, 102, servers-1, false)
+	cfg.one((leader+1)%servers, 103, servers-1, false)
 
 	// disconnect another replica
 	cfg.disconnect((leader + 2))
 
 	// submit a command to each server, make sure their instances
-	index := cfg.peers[leader+1].Start(makePutCommand(104))
+	index := cfg.peers[leader+1].Start(104)
 
 	if index.Replica != leader+1 && index.Index != 1 {
 		t.Fatalf("expected instance %v.1, instead got %v", leader+1, index)
@@ -183,24 +150,24 @@ func TestFailAgree3B(t *testing.T) {
 		leader  = 2
 	)
 
-	cfg := make_config(t, servers, false, interferesTestCommand)
+	cfg := make_config(t, servers, false, interferes1)
 	defer cfg.cleanup()
 
 	cfg.begin("Test (3B): agreement after replica reconnects")
 
-	cfg.one(leader, makePutCommand(101), servers, false)
+	cfg.one(leader, 101, servers, false)
 
 	cfg.disconnect((leader + 1) % servers)
 
-	cfg.one(leader, makePutCommand(102), servers-1, false)
-	cfg.one(leader, makePutCommand(103), servers-1, false)
-	cfg.one(leader, makePutCommand(104), servers-1, false)
-	cfg.one(leader, makePutCommand(105), servers-1, false)
+	cfg.one(leader, 102, servers-1, false)
+	cfg.one(leader, 103, servers-1, false)
+	cfg.one(leader, 104, servers-1, false)
+	cfg.one(leader, 105, servers-1, false)
 
 	cfg.connect((leader + 1) % servers)
 
-	cfg.one(leader, makePutCommand(106), servers, true)
-	cfg.one(leader, makePutCommand(107), servers, true)
+	cfg.one(leader, 106, servers, true)
+	cfg.one(leader, 107, servers, true)
 
 	cfg.end()
 }
@@ -211,19 +178,19 @@ func TestFailNoAgree3B(t *testing.T) {
 		leader  = 3
 	)
 
-	cfg := make_config(t, servers, false, interferesTestCommand)
+	cfg := make_config(t, servers, false, interferes1)
 	defer cfg.cleanup()
 
 	cfg.begin("Test (3B): no agreement if too many replicas disconnect")
 
-	cfg.one(leader, makePutCommand(10), servers, false)
+	cfg.one(leader, 10, servers, false)
 
 	cfg.disconnect((leader + 1) % servers)
 	cfg.disconnect((leader + 2) % servers)
 	cfg.disconnect((leader + 3) % servers)
 
 	// submit a command to each server, make sure their instances
-	index := cfg.peers[leader].Start(makePutCommand(104))
+	index := cfg.peers[leader].Start(104)
 
 	if index.Replica != leader && index.Index != 1 {
 		t.Fatalf("expected instance %v.1, instead got %v", leader, index)
@@ -243,7 +210,7 @@ func TestFailNoAgree3B(t *testing.T) {
 	cfg.connect((leader + 2) % servers)
 	cfg.connect((leader + 3) % servers)
 
-	cfg.one(leader, makePutCommand(1000), servers, true)
+	cfg.one(leader, 1000, servers, true)
 
 	cfg.end()
 }
@@ -254,7 +221,7 @@ func TestConcurrentStarts3B(t *testing.T) {
 		iters   = 5
 	)
 
-	cfg := make_config(t, servers, false, interferesInt)
+	cfg := make_config(t, servers, false, interferes1)
 	defer cfg.cleanup()
 
 	cfg.begin("Test (3B): concurrent Start()s")
@@ -317,7 +284,7 @@ func TestRejoin3B(t *testing.T) {
 		leader3 = 2
 	)
 
-	cfg := make_config(t, servers, false, interferesInt)
+	cfg := make_config(t, servers, false, interferes1)
 	defer cfg.cleanup()
 
 	cfg.begin("Test (3B): rejoin of partitioned server")
@@ -348,7 +315,7 @@ func TestBackup3B(t *testing.T) {
 		leader2 = 1
 	)
 
-	cfg := make_config(t, servers, false, interferesInt)
+	cfg := make_config(t, servers, false, interferes1)
 	defer cfg.cleanup()
 
 	cfg.begin("Test (3B): replica backs up quickly")

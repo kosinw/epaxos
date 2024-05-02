@@ -19,26 +19,19 @@ func TestExecute(t *testing.T) {
 	e.lastApplied = make([]int, n)
 	graph := [][]Instance{
 		//0: 0.0->1.0,
-		{Instance{[]LogIndex{{Replica: 1, Index: 2}, {Replica: 1, Index: 0}}, 1, "", LogIndex{0, 0}}},
+		{Instance{Deps: map[LogIndex]int{{Replica: 1, Index: 2}: 1, {Replica: 1, Index: 0}: 1}, Seq: 1, Command: "", Position: LogIndex{0, 0}, Status: COMMITTED}},
 		//1: 1.0 -> 2.0, 1.1->1.2, 1.2-> 1.1,3.1
-		{Instance{[]LogIndex{{Replica: 2, Index: 0}}, 7, "hi", LogIndex{1, 0}}, Instance{[]LogIndex{{1, 2}}, 6, "hi", LogIndex{1, 1}}, Instance{[]LogIndex{{3, 1}, {1, 1}}, 12, "hi", LogIndex{1, 2}}},
+		{Instance{Deps: map[LogIndex]int{{Replica: 2, Index: 0}: 1}, Seq: 7, Command: "hi", Position: LogIndex{1, 0}, Status: COMMITTED}, Instance{Deps: map[LogIndex]int{{Replica: 1, Index: 2}: 1}, Seq: 6, Command: "hi", Position: LogIndex{Replica: 1, Index: 1}, Status: COMMITTED}, Instance{Deps: map[LogIndex]int{{Replica: 3, Index: 1}: 1, {Replica: 1, Index: 1}: 1}, Seq: 12, Command: "hi", Position: LogIndex{1, 2}, Status: COMMITTED}},
 		//2: 2.0-> 3.1 3.0
-		{Instance{[]LogIndex{{Replica: 3, Index: 0}, {Replica: 3, Index: 1}}, 3, "bye", LogIndex{2, 0}}},
+		{Instance{Deps: map[LogIndex]int{{Replica: 3, Index: 0}: 1, {Replica: 3, Index: 1}: 1}, Seq: 3, Command: "bye", Position: LogIndex{2, 0}, Status: COMMITTED}},
 		//3: 3.0-> 1.0, 3.1 -> 4.1
-		{Instance{[]LogIndex{{Replica: 1, Index: 0}}, 2, "hi", LogIndex{3, 0}}, Instance{[]LogIndex{{Replica: 4, Index: 1}}, 5, "hi", LogIndex{3, 1}}},
+		{Instance{Deps: map[LogIndex]int{{Replica: 1, Index: 0}: 1}, Seq: 2, Command: "hi", Position: LogIndex{3, 0}, Status: COMMITTED}, Instance{Deps: map[LogIndex]int{{Replica: 4, Index: 1}: 1}, Seq: 5, Command: "hi", Position: LogIndex{3, 1}, Status: COMMITTED}},
 		//4: 4.0->1.0, 4.1->3.0
-		{Instance{[]LogIndex{{Replica: 1, Index: 0}}, 8, "hi", LogIndex{4, 0}}, Instance{[]LogIndex{{Replica: 3, Index: 0}}, 4, "hi", LogIndex{4, 1}}},
+		{Instance{Deps: map[LogIndex]int{{Replica: 1, Index: 0}: 1}, Seq: 8, Command: "hi", Position: LogIndex{4, 0}, Status: COMMITTED}, Instance{Deps: map[LogIndex]int{{Replica: 3, Index: 0}: 1}, Seq: 4, Command: "hi", Position: LogIndex{4, 1}, Status: COMMITTED}},
 	}
 	totalEntries := 0
 	for _, r := range graph {
 		totalEntries += len(r)
-	}
-	e.status = [][]Status{
-		{COMMITTED},
-		{COMMITTED, COMMITTED, COMMITTED},
-		{COMMITTED},
-		{COMMITTED, COMMITTED},
-		{COMMITTED, COMMITTED},
 	}
 	e.lastApplied = []int{-1, -1, -1, -1, -1}
 	e.log = graph
@@ -71,26 +64,19 @@ func TestExecute2(t *testing.T) {
 	e.lastApplied = make([]int, n)
 	graph := [][]Instance{
 		//0: 0.0->1.0,
-		{Instance{[]LogIndex{{Replica: 1, Index: 2}, {Replica: 1, Index: 0}}, 1, "", LogIndex{0, 0}}},
+		{Instance{Deps: map[LogIndex]int{{Replica: 1, Index: 2}: 1, {Replica: 1, Index: 0}: 1}, Seq: 1, Command: "", Position: LogIndex{0, 0}, Status: COMMITTED}},
 		//1: 1.0 -> 2.0, 1.1->1.2, 1.2-> 1.1,3.1
-		{Instance{[]LogIndex{{Replica: 2, Index: 0}}, 7, "hi", LogIndex{1, 0}}, Instance{[]LogIndex{{1, 2}}, 6, "hi", LogIndex{1, 1}}, Instance{[]LogIndex{{3, 1}, {1, 1}}, 12, "hi", LogIndex{1, 2}}},
+		{Instance{Deps: map[LogIndex]int{{Replica: 2, Index: 0}: 1}, Seq: 7, Command: "hi", Position: LogIndex{1, 0}, Status: COMMITTED}, Instance{Deps: map[LogIndex]int{{1, 2}: 1}, Seq: 6, Command: "hi", Position: LogIndex{1, 1}, Status: COMMITTED}, Instance{Deps: map[LogIndex]int{{3, 1}: 1, {1, 1}: 1}, Seq: 12, Command: "hi", Position: LogIndex{1, 2}, Status: COMMITTED}},
 		//2: 2.0-> 3.1 3.0
-		{Instance{[]LogIndex{{Replica: 3, Index: 0}, {Replica: 3, Index: 1}}, 3, "bye", LogIndex{2, 0}}},
+		{Instance{Deps: map[LogIndex]int{{Replica: 3, Index: 0}: 1, {Replica: 3, Index: 1}: 1}, Seq: 3, Command: "bye", Position: LogIndex{2, 0}, Status: COMMITTED}},
 		//3: 3.0-> 1.0, 3.1 -> 4.1
-		{Instance{[]LogIndex{{Replica: 1, Index: 0}}, 2, "hi", LogIndex{3, 0}}, Instance{[]LogIndex{{Replica: 4, Index: 1}}, 5, "hi", LogIndex{3, 1}}},
+		{Instance{Deps: map[LogIndex]int{{Replica: 1, Index: 0}: 1}, Seq: 2, Command: "hi", Position: LogIndex{3, 0}, Status: COMMITTED}, Instance{Deps: map[LogIndex]int{{Replica: 4, Index: 1}: 1}, Seq: 5, Command: "hi", Position: LogIndex{3, 1}, Status: COMMITTED}},
 		//4: 4.0->1.0, 4.1->3.0
-		{Instance{[]LogIndex{{Replica: 1, Index: 0}}, 8, "hi", LogIndex{4, 0}}, Instance{[]LogIndex{{Replica: 3, Index: 0}}, 4, "hi", LogIndex{4, 1}}},
+		{Instance{Deps: map[LogIndex]int{{Replica: 1, Index: 0}: 1}, Seq: 8, Command: "hi", Position: LogIndex{4, 0}, Status: COMMITTED}, Instance{Deps: map[LogIndex]int{{Replica: 3, Index: 0}: 1}, Seq: 4, Command: "hi", Position: LogIndex{4, 1}, Status: COMMITTED}},
 	}
 	totalEntries := 0
 	for _, r := range graph {
 		totalEntries += len(r)
-	}
-	e.status = [][]Status{
-		{COMMITTED},
-		{COMMITTED, COMMITTED, COMMITTED},
-		{COMMITTED},
-		{COMMITTED, COMMITTED},
-		{COMMITTED, COMMITTED},
 	}
 	e.lastApplied = []int{-1, -1, -1, -1, -1}
 	e.log = graph
@@ -122,23 +108,17 @@ func TestSCCChecker(t *testing.T) {
 	e.lastApplied = make([]int, n)
 	graph := [][]Instance{
 		//0: 0.0->1.0,
-		{Instance{[]LogIndex{{Replica: 1, Index: 2}, {Replica: 1, Index: 0}}, 1, "", LogIndex{0, 0}}},
+		{Instance{Deps: map[LogIndex]int{{Replica: 1, Index: 2}: 1, {Replica: 1, Index: 0}: 1}, Seq: 1, Command: "", Position: LogIndex{0, 0}, Status: EXECUTED}},
 		//1: 1.0 -> 2.0, 1.1->1.2, 1.2-> 1.1,3.1
-		{Instance{[]LogIndex{{Replica: 2, Index: 0}}, 7, "hi", LogIndex{1, 0}}, Instance{[]LogIndex{{1, 2}}, 6, "hi", LogIndex{1, 1}}, Instance{[]LogIndex{{3, 1}, {1, 1}}, 12, "hi", LogIndex{1, 2}}},
+		{Instance{Deps: map[LogIndex]int{{Replica: 2, Index: 0}: 1}, Seq: 7, Command: "hi", Position: LogIndex{1, 0}, Status: EXECUTED}, Instance{Deps: map[LogIndex]int{{1, 2}: 1}, Seq: 6, Command: "hi", Position: LogIndex{1, 1}, Status: EXECUTED}, Instance{Deps: map[LogIndex]int{{3, 1}: 1, {1, 1}: 1}, Seq: 12, Command: "hi", Position: LogIndex{1, 2}, Status: EXECUTED}},
 		//2: 2.0-> 3.1 3.0
-		{Instance{[]LogIndex{{Replica: 3, Index: 0}, {Replica: 3, Index: 1}}, 3, "bye", LogIndex{2, 0}}},
+		{Instance{Deps: map[LogIndex]int{{Replica: 3, Index: 0}: 1, {Replica: 3, Index: 1}: 1}, Seq: 3, Command: "bye", Position: LogIndex{2, 0}, Status: EXECUTED}},
 		//3: 3.0-> 1.0, 3.1 -> 4.1
-		{Instance{[]LogIndex{{Replica: 1, Index: 0}}, 2, "hi", LogIndex{3, 0}}, Instance{[]LogIndex{{Replica: 4, Index: 1}}, 5, "hi", LogIndex{3, 1}}},
-		//4: 4.0, 4.1->3.0
-		{Instance{[]LogIndex{{Replica: 1, Index: 0}}, 8, "hi", LogIndex{4, 0}}, Instance{[]LogIndex{{Replica: 3, Index: 0}}, 4, "hi", LogIndex{4, 1}}},
+		{Instance{Deps: map[LogIndex]int{{Replica: 1, Index: 0}: 1}, Seq: 2, Command: "hi", Position: LogIndex{3, 0}, Status: EXECUTED}, Instance{Deps: map[LogIndex]int{{Replica: 4, Index: 1}: 1}, Seq: 5, Command: "hi", Position: LogIndex{3, 1}, Status: EXECUTED}},
+		//4: 4.0->1.0, 4.1->3.0
+		{Instance{Deps: map[LogIndex]int{{Replica: 1, Index: 0}: 1}, Seq: 8, Command: "hi", Position: LogIndex{4, 0}, Status: EXECUTED}, Instance{Deps: map[LogIndex]int{{Replica: 3, Index: 0}: 1}, Seq: 4, Command: "hi", Position: LogIndex{4, 1}, Status: EXECUTED}},
 	}
-	e.status = [][]Status{
-		{EXECUTED},
-		{EXECUTED, EXECUTED, EXECUTED},
-		{EXECUTED},
-		{EXECUTED, EXECUTED},
-		{EXECUTED, EXECUTED},
-	}
+
 	e.log = graph
 	order := []LogIndex{{3, 0}, {2, 0}, {4, 1}, {3, 1}, {1, 0}, {1, 1}, {1, 2}, {0, 0}}
 	if !test_scc(n, &e, order) {
