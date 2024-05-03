@@ -12,19 +12,22 @@ func interferes(cmd1, cmd2 interface{}) bool {
 
 func checkCommitted(peers []*EPaxos, cmds []interface{}, logIndices []LogIndex) bool {
 	committed := true
+	// fmt.Printf("logindices: %v\n", logIndices)
 	for i, logIndex := range logIndices {
 		commitIndex := logIndex.Index
 		cmd := cmds[i]
-		for peerInd, peer := range(peers) {
+		// fmt.Printf("processing command %v (index %v)\n", cmd, i)
+		for _, peer := range(peers) {
 			sublog := peer.log[logIndex.Replica]
 			if len(sublog) <= commitIndex {
-				fmt.Printf("[%v] len(sublog) %v <= commitIndex %v\n", peerInd, len(sublog), commitIndex)
+				// fmt.Printf("[%v] len(sublog) %v <= commitIndex %v\n", peerInd, len(sublog), commitIndex)
 				committed = false
 				break
 			}
 			instance := sublog[commitIndex]
+			// fmt.Printf("looking at commitIndex %v. instance %v\n", commitIndex, instance)
 			if instance.Command != cmd || instance.Status != COMMITTED {
-				fmt.Printf("[%v] cmd %v instance.Command %v, instance.Status %v\n", peerInd, cmd, instance.Command, instance.Status)
+				// fmt.Printf("[%v] cmd %v instance.Command %v, instance.Status %v\n", peerInd, cmd, instance.Command, instance.Status)
 				committed = false
 				break
 			}
@@ -53,7 +56,7 @@ func TestBasicCommit(t *testing.T) {
 		// fmt.Printf("[%v] outcome: %v\n", iters, committed)
 		time.Sleep(10 * time.Millisecond)
 	}
-	
+
 	if !committed {
 		t.Fail()
 	} else {
@@ -79,7 +82,7 @@ func TestMultipleCommit(t *testing.T) {
 	logIndex1 := e0.Start(cmd1)
 	logIndex2 := e1.Start(cmd2)
 	logIndices := []LogIndex{logIndex1, logIndex2}
-	
+
 	committed := false
 	for iters := 0; iters < 30; iters++ {
 		committed = checkCommitted(cfg.peers, cmds, logIndices)
@@ -88,7 +91,7 @@ func TestMultipleCommit(t *testing.T) {
 		}
 		time.Sleep(10 * time.Millisecond)
 	}
-	
+
 	if !committed {
 		t.Fail()
 	} else {
@@ -111,9 +114,10 @@ func TestOneCommit(t *testing.T) {
 	cmds := []interface{}{cmd1, cmd2}
 
 	logIndex1 := e0.Start(cmd1)
+	time.Sleep(10 * time.Millisecond)
 	logIndex2 := e0.Start(cmd2)
 	logIndices := []LogIndex{logIndex1, logIndex2}
-	
+
 	committed := false
 	for iters := 0; iters < 30; iters++ {
 		committed = checkCommitted(cfg.peers, cmds, logIndices)
@@ -122,7 +126,7 @@ func TestOneCommit(t *testing.T) {
 		}
 		time.Sleep(10 * time.Millisecond)
 	}
-	
+
 	if !committed {
 		t.Fail()
 	} else {
@@ -132,5 +136,5 @@ func TestOneCommit(t *testing.T) {
 	for ind, peer := range cfg.peers {
 		fmt.Printf("peer %v log: %v\n", ind, peer.log)
 	}
-	
+
 }

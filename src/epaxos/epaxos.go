@@ -151,7 +151,8 @@ func (e *EPaxos) processRequest(cmd interface{}) {
 	deps := make(map[LogIndex]int)
 	// loop through all instances in replica L's 2D log
 	for r, replica := range e.log {
-		for i := len(replica) - 1; i >= 0; i++ { // loop through each replica backwards
+		for i := len(replica) - 1; i >= 0; i-- { // loop through each replica backwards
+			fmt.Printf("replica %v, i %v, len(replica) %v\n", replica, i, len(replica))
 			instance := replica[i]
 			if e.interferenceChecker(cmd, instance.Command) {
 				deps[LogIndex{Replica: r, Index: i}] = 1
@@ -348,7 +349,7 @@ func (e *EPaxos) PreAccept(args *PreAcceptArgs, reply *PreAcceptReply) {
 	depsL := args.Deps
 	depsR := make(map[LogIndex]int) // construct this replica's dependencies map
 	for r, replica := range e.log {
-		for i := len(replica) - 1; i >= 0; i++ { // loop through instances of each replica backwards
+		for i := len(replica) - 1; i >= 0; i-- { // loop through instances of each replica backwards
 			instance := replica[i]
 			if e.interferenceChecker(cmd, instance.Command) {
 				depsR[LogIndex{Replica: r, Index: i}] = 1
