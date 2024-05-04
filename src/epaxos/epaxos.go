@@ -181,6 +181,9 @@ func (e *EPaxos) preAcceptPhase(cmd interface{}, ix LogIndex) (commit bool, abor
 	// broadcast and wait for pre-accept messages to our other peers
 	updatedSeq, updatedDeps, abort := e.broadcastPreAccept(*instance)
 
+	e.Lock()
+	defer e.Unlock()
+
 	// If we have to abort just end this phase without moving onto the next one
 	if abort {
 		instance := e.getInstance(ix)
@@ -504,7 +507,7 @@ func (e *EPaxos) broadcastAccept(instance Instance) (abort bool) {
 
 		// Fast path quorum
 		if replyCount >= majority {
-			e.debug(topicInfo, "Received succesful fast path quorum for instance %v...", instance.Position)
+			e.debug(topicInfo, "Received succesful slow path majority for instance %v...", instance.Position)
 			abort = false
 			break
 		}

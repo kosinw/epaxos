@@ -20,14 +20,15 @@ func checkCommitted(peers []*EPaxos, cmds []interface{}, logIndices []LogIndex) 
 		for _, peer := range peers {
 			peer.lock.Lock()
 			sublog := peer.log[logIndex.Replica]
-			peer.lock.Unlock()
 
 			if len(sublog) <= commitIndex {
 				// fmt.Printf("[%v] len(sublog) %v <= commitIndex %v\n", peerInd, len(sublog), commitIndex)
 				committed = false
+				peer.lock.Unlock()
 				break
 			}
 			instance := sublog[commitIndex]
+			peer.lock.Unlock()
 			// fmt.Printf("looking at commitIndex %v. instance %v\n", commitIndex, instance)
 			if instance.Command != cmd || instance.Status != COMMITTED {
 				// fmt.Printf("[%v] cmd %v instance.Command %v, instance.Status %v\n", peerInd, cmd, instance.Command, instance.Status)
