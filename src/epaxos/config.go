@@ -161,7 +161,7 @@ func (cfg *config) checkLogs(peer int, m Instance) (string, bool) {
 		}
 	}
 
-	_, prevok := cfg.logs[peer][R][i]
+	_, prevok := cfg.logs[peer][R][i-1]
 	cfg.logs[peer][R][i] = v
 	if i > cfg.maxIndex[R] {
 		cfg.maxIndex[R] = i

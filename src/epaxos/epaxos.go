@@ -359,6 +359,7 @@ func (e *EPaxos) broadcastPreAccept(instance Instance) (seq int, deps map[LogInd
 		}
 
 		// Fast path quorum
+		// TODO(kosinw): This is the right number you are not checking
 		if replyCount >= majority && instance.Seq == unionSeq && mapsEqual(instance.Deps, unionDeps) {
 			e.debug(topicPreAccept, "Received succesful fast path quorum for instance %v...", instance.Position)
 			abort = false
