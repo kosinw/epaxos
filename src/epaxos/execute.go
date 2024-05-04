@@ -83,10 +83,11 @@ func (e *EPaxos) execDFs(replica int, curr int, disc [][]int, low [][]int, stack
 				break
 			}
 			//	fmt.Printf("Executing %v.%v \n", instance.Position.Replica, instance.Position.Index)
-			e.lock.Unlock()
-			e.applyCh <- instance
-			e.lock.Lock()
 			e.log[instance.Position.Replica][instance.Position.Index].Status = EXECUTED
+			e.lock.Unlock()
+			e.applyCh <- e.log[instance.Position.Replica][instance.Position.Index]
+			e.lock.Lock()
+
 			executed = true
 		}
 		// sccs[c.Replica][c.Index] = *counter
