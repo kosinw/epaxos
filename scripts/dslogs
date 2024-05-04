@@ -43,6 +43,8 @@ TOPICS = {
     "GET": "#67a0b2",
     "CONFIG": "#98719f",
     "INSTALL": "#d08341",
+    "ACCEPT": "#8cc7a1",
+    "PACCEPT": "#d0cfec"
 }
 # fmt: on
 

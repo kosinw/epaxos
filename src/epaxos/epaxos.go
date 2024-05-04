@@ -146,12 +146,12 @@ func (e *EPaxos) preAcceptPhase(cmd interface{}, ix LogIndex) (commit bool, abor
 
 	assert(ix.Replica == e.me, e.me, "Log index %v should have replica %v", ix, replicaName(e.me))
 
-	e.debug(topicInfo, "Starting pre-accept phase for instance %v...", ix)
+	e.debug(topicPreAccept, "Starting pre-accept phase for instance %v...", ix)
 
 	// Print out how phase 1 ended
 	defer func() {
 		e.debug(
-			topicInfo,
+			topicPreAccept,
 			"Ending pre-accept phase for instance %v... (commit=%v abort=%v)",
 			ix,
 			commit,
@@ -229,7 +229,7 @@ func (e *EPaxos) acceptPhase(pos LogIndex) (abort bool) {
 
 	defer func() {
 		e.debug(
-			topicInfo,
+			topicAccept,
 			"Ending Paxos-Accept phase for instance %v... (abort=%v)",
 			pos,
 			abort,
@@ -292,10 +292,10 @@ func (e *EPaxos) processRequest(cmd interface{}, ix LogIndex) {
 	}
 
 	if !commit {
-		e.debug(topicInfo, "On slow path for %v, running Paxos-Accept...", ix)
+		e.debug(topicAccept, "On slow path for %v, running Paxos-Accept...", ix)
 		abort = e.acceptPhase(ix)
 	} else {
-		e.debug(topicInfo, "On fast path for %v, running Commit...", ix)
+		e.debug(topicCommit, "On fast path for %v, running Commit...", ix)
 	}
 
 	if abort || e.killed() {
@@ -367,14 +367,14 @@ func (e *EPaxos) broadcastPreAccept(instance Instance) (seq int, deps map[LogInd
 
 		// Fast path quorum
 		if replyCount >= majority && instance.Seq == unionSeq && mapsEqual(instance.Deps, unionDeps) {
-			e.debug(topicInfo, "Received succesful fast path quorum for instance %v...", instance.Position)
+			e.debug(topicPreAccept, "Received succesful fast path quorum for instance %v...", instance.Position)
 			abort = false
 			break
 		}
 
 		// Wait for all the replies
 		if replyCount >= quorum {
-			e.debug(topicInfo, "Received succesful slow path quorum for instance %v...", instance.Position)
+			e.debug(topicPreAccept, "Received succesful slow path quorum for instance %v...", instance.Position)
 			abort = false
 			break
 		}
@@ -391,8 +391,8 @@ func (e *EPaxos) PreAccept(args *PreAcceptArgs, reply *PreAcceptReply) {
 	e.Lock()
 	defer e.Unlock()
 
-	e.debug(topicRpc, "Receiving PreAccept from %v for %v", replicaName(args.Ballot.ReplicaNum), args.Position)
-	defer e.debug(topicRpc, "Finished PreAccept from %v for %v", replicaName(args.Ballot.ReplicaNum), args.Position)
+	e.debug(topicPreAccept, "Receiving PreAccept from %v for %v", replicaName(args.Ballot.ReplicaNum), args.Position)
+	defer e.debug(topicPreAccept, "Finished PreAccept from %v for %v", replicaName(args.Ballot.ReplicaNum), args.Position)
 
 	// First check if the ballot number is invalid for the RPC request
 	// This is done to ensure freshness of messages
@@ -401,13 +401,13 @@ func (e *EPaxos) PreAccept(args *PreAcceptArgs, reply *PreAcceptReply) {
 	if instance.Valid && instance.Ballot.gt(args.Ballot) {
 		index := args.Position
 		b := e.log[index.Replica][index.Index].Ballot
-		e.debug(topicInfo, "Ballot number too low: %v < %v", args.Ballot, b)
+		e.debug(topicPreAccept, "Ballot number too low: %v < %v", args.Ballot, b)
 		reply.Success = false
 		return
 	}
 
 	if instance.Valid && instance.Ballot.le(args.Ballot) && instance.Status > PREACCEPTED {
-		e.debug(topicInfo, "Instance in a further phase: %v < %v", PREACCEPTED, instance.Status)
+		e.debug(topicPreAccept, "Instance in a further phase: %v < %v", PREACCEPTED, instance.Status)
 		reply.Deps = instance.Deps
 		reply.Seq = instance.Seq
 		reply.Success = true
@@ -439,14 +439,14 @@ func (e *EPaxos) PreAccept(args *PreAcceptArgs, reply *PreAcceptReply) {
 }
 
 func (e *EPaxos) sendPreAccept(server int, args *PreAcceptArgs, reply *PreAcceptReply) bool {
-	e.debug(topicWarn, "Calling %v.PreAccept...: %v", replicaName(server), args.Position)
+	e.debug(topicRpc, "Calling %v.PreAccept...: %v", replicaName(server), args.Position)
 
 	ok := e.peers[server].Call("EPaxos.PreAccept", args, reply)
 
 	if ok {
-		e.debug(topicWarn, "Finishing %v.PreAccept...: %v", replicaName(server), reply.Success)
+		e.debug(topicRpc, "Finishing %v.PreAccept...: %v", replicaName(server), reply.Success)
 	} else {
-		e.debug(topicWarn, "Dropping %v.PreAccept...", replicaName(server))
+		e.debug(topicRpc, "Dropping %v.PreAccept...", replicaName(server))
 	}
 	return ok
 }
@@ -507,7 +507,7 @@ func (e *EPaxos) broadcastAccept(instance Instance) (abort bool) {
 
 		// Fast path quorum
 		if replyCount >= majority {
-			e.debug(topicInfo, "Received succesful slow path majority for instance %v...", instance.Position)
+			e.debug(topicAccept, "Received succesful slow path majority for instance %v...", instance.Position)
 			abort = false
 			break
 		}
@@ -530,13 +530,13 @@ func (e *EPaxos) Accept(args *AcceptArgs, reply *AcceptReply) {
 	if instance.Valid && instance.Ballot.gt(args.Ballot) {
 		index := args.Position
 		b := e.log[index.Replica][index.Index].Ballot
-		e.debug(topicInfo, "Ballot number too low: %v < %v", args.Ballot, b)
+		e.debug(topicAccept, "Ballot number too low: %v < %v", args.Ballot, b)
 		reply.Success = false
 		return
 	}
 
 	if instance.Valid && instance.Ballot.le(args.Ballot) && instance.Status > ACCEPTED {
-		e.debug(topicInfo, "Instance in a further phase: %v < %v", ACCEPTED, instance.Status)
+		e.debug(topicAccept, "Instance in a further phase: %v < %v", ACCEPTED, instance.Status)
 		reply.Success = true
 		return
 	}
@@ -558,14 +558,14 @@ func (e *EPaxos) Accept(args *AcceptArgs, reply *AcceptReply) {
 }
 
 func (e *EPaxos) sendAccept(server int, args *AcceptArgs, reply *AcceptReply) bool {
-	e.debug(topicWarn, "Calling %v.Accept...: %v", replicaName(server), args.Position)
+	e.debug(topicRpc, "Calling %v.Accept...: %v", replicaName(server), args.Position)
 
 	ok := e.peers[server].Call("EPaxos.Accept", args, reply)
 
 	if ok {
-		e.debug(topicWarn, "Finishing %v.Accept...: %v", replicaName(server), reply.Success)
+		e.debug(topicRpc, "Finishing %v.Accept...: %v", replicaName(server), reply.Success)
 	} else {
-		e.debug(topicWarn, "Dropping %v.Accept...", replicaName(server))
+		e.debug(topicRpc, "Dropping %v.Accept...", replicaName(server))
 	}
 	return ok
 }
@@ -635,15 +635,15 @@ func (e *EPaxos) Commit(args *CommitArgs, reply *CommitReply) {
 	e.Lock()
 	defer e.Unlock()
 
-	e.debug(topicRpc, "Receiving Commit from %v for %v", replicaName(args.Ballot.ReplicaNum), args.Position)
-	defer e.debug(topicRpc, "Finished Commit from %v for %v", replicaName(args.Ballot.ReplicaNum), args.Position)
+	e.debug(topicCommit, "Receiving Commit from %v for %v", replicaName(args.Ballot.ReplicaNum), args.Position)
+	defer e.debug(topicCommit, "Finished Commit from %v for %v", replicaName(args.Ballot.ReplicaNum), args.Position)
 
 	instance := e.getInstance(args.Position)
 
 	if instance.Valid && instance.Ballot.gt(args.Ballot) {
 		index := args.Position
 		b := e.log[index.Replica][index.Index].Ballot
-		e.debug(topicInfo, "Ballot number too low: %v < %v", args.Ballot, b)
+		e.debug(topicCommit, "Ballot number too low: %v < %v", args.Ballot, b)
 		reply.Success = false
 		return
 	}
@@ -663,14 +663,14 @@ func (e *EPaxos) Commit(args *CommitArgs, reply *CommitReply) {
 }
 
 func (e *EPaxos) sendCommit(server int, args *CommitArgs, reply *CommitReply) bool {
-	e.debug(topicWarn, "Calling %v.Commit...: %v", replicaName(server), args.Position)
+	e.debug(topicRpc, "Calling %v.Commit...: %v", replicaName(server), args.Position)
 
 	ok := e.peers[server].Call("EPaxos.Commit", args, reply)
 
 	if ok {
-		e.debug(topicWarn, "Finishing %v.Commit...: %v", replicaName(server), reply.Success)
+		e.debug(topicRpc, "Finishing %v.Commit...: %v", replicaName(server), reply.Success)
 	} else {
-		e.debug(topicWarn, "Dropping %v.Commit...", replicaName(server))
+		e.debug(topicRpc, "Dropping %v.Commit...", replicaName(server))
 	}
 	return ok
 }
@@ -719,7 +719,7 @@ func (e *EPaxos) Kill() {
 	defer e.Unlock()
 
 	atomic.StoreInt32(&e.dead, 1)
-	e.debug(topicInfo, "Killing replica %v...", e.me)
+	e.debug(topicWarn, "Killing replica %v...", e.me)
 }
 
 func (e *EPaxos) killed() bool {

@@ -12,18 +12,20 @@ import (
 type topic string
 
 const (
-	topicClient  topic = "CLIENT"
-	topicCommit  topic = "COMMIT"
-	topicExecute topic = "EXECUTE"
-	topicError   topic = "ERROR"
-	topicInfo    topic = "INFO"
-	topicLog     topic = "LOG"
-	topicPersist topic = "PERSIST"
-	topicTimer   topic = "TIMER"
-	topicWarn    topic = "WARN"
-	topicLock    topic = "LOCK"
-	topicStart   topic = "START"
-	topicRpc     topic = "RPC"
+	topicClient    topic = "CLIENT"
+	topicCommit    topic = "COMMIT"
+	topicExecute   topic = "EXECUTE"
+	topicError     topic = "ERROR"
+	topicInfo      topic = "INFO"
+	topicLog       topic = "LOG"
+	topicPersist   topic = "PERSIST"
+	topicTimer     topic = "TIMER"
+	topicWarn      topic = "WARN"
+	topicLock      topic = "LOCK"
+	topicStart     topic = "START"
+	topicRpc       topic = "RPC"
+	topicPreAccept topic = "PACCEPT"
+	topicAccept    topic = "ACCEPT"
 )
 
 var debugStart time.Time
