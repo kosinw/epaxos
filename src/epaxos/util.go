@@ -14,17 +14,16 @@ type topic string
 const (
 	topicClient  topic = "CLIENT"
 	topicCommit  topic = "COMMIT"
-	topicDrop    topic = "DROP"
+	topicExecute topic = "EXECUTE"
 	topicError   topic = "ERROR"
 	topicInfo    topic = "INFO"
-	topicLeader  topic = "LEADER"
 	topicLog     topic = "LOG"
 	topicPersist topic = "PERSIST"
-	topicSnap    topic = "SNAP"
 	topicTimer   topic = "TIMER"
-	topicVote    topic = "VOTE"
 	topicWarn    topic = "WARN"
-	topicTrace   topic = "TRACE"
+	topicLock    topic = "LOCK"
+	topicStart   topic = "START"
+	topicRpc     topic = "RPC"
 )
 
 var debugStart time.Time
