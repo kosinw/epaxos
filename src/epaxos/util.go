@@ -29,20 +29,6 @@ const (
 var debugStart time.Time
 var debugEnabled int32
 
-// func min(a, b int) int {
-// 	if a < b {
-// 		return a
-// 	}
-// 	return b
-// }
-
-// func max(a, b int) int {
-// 	if a > b {
-// 		return a
-// 	}
-// 	return b
-// }
-
 func checkDebugMode() bool {
 	v := os.Getenv("VERBOSE")
 
@@ -53,7 +39,7 @@ func checkDebugMode() bool {
 			panic("invalid verbosity")
 		}
 
-		return level == 1 // verbosity level 1 is for debugging raft
+		return level == 1 // verbosity level 1 is for debugging epaxos
 	}
 
 	return false
@@ -70,10 +56,11 @@ func init() {
 
 	log.SetFlags(log.Flags() &^ (log.LstdFlags))
 	log.SetOutput(os.Stdout)
+
+	enableLogging()
 }
 
 func disableLogging() {
-	// debugEnabled.Store(false)
 	atomic.StoreInt32(&debugEnabled, 0)
 }
 

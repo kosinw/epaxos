@@ -111,12 +111,11 @@ type PreAcceptReply struct {
 
 // Accept RPC arguments structure
 type AcceptArgs struct {
-	Command interface{}      // command
-	Deps    map[LogIndex]int // list of all instances that contain commands that interfere with this command
-	Seq     int              // sequence number used to break dependencies
-
-	Ballot   Ballot   // ballot number
-	Position LogIndex // position of original command leader
+	Command  interface{}      // command
+	Deps     map[LogIndex]int // list of all instances that contain commands that interfere with this command
+	Seq      int              // sequence number used to break dependencies
+	Ballot   Ballot           // ballot number
+	Position LogIndex         // position of original command leader
 }
 
 // Accept RPC reply structure
