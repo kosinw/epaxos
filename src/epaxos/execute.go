@@ -86,6 +86,7 @@ func (e *EPaxos) execDFs(replica int, curr int, disc [][]int, low [][]int, stack
 			e.lock.Unlock()
 			e.applyCh <- instance
 			e.lock.Lock()
+			e.debug(topicExecute, "Executing instance %v", instance.Position)
 			e.log[instance.Position.Replica][instance.Position.Index].Status = EXECUTED
 			executed = true
 		}

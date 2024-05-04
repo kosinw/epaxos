@@ -30,7 +30,7 @@ func checkCommitted(peers []*EPaxos, cmds []interface{}, logIndices []LogIndex) 
 			instance := sublog[commitIndex]
 			peer.lock.Unlock()
 			// fmt.Printf("looking at commitIndex %v. instance %v\n", commitIndex, instance)
-			if instance.Command != cmd || instance.Status != COMMITTED {
+			if instance.Command != cmd || instance.Status < COMMITTED {
 				// fmt.Printf("[%v] cmd %v instance.Command %v, instance.Status %v\n", peerInd, cmd, instance.Command, instance.Status)
 				committed = false
 				break
@@ -68,7 +68,9 @@ func TestBasicCommit(t *testing.T) {
 	}
 
 	for ind, peer := range cfg.peers {
+		peer.lock.Lock()
 		fmt.Printf("peer %v log: %v\n", ind, peer.log)
+		peer.lock.Unlock()
 	}
 }
 
@@ -103,7 +105,9 @@ func TestMultipleCommit(t *testing.T) {
 	}
 
 	for ind, peer := range cfg.peers {
+		peer.lock.Lock()
 		fmt.Printf("peer %v log: %v\n", ind, peer.log)
+		peer.lock.Unlock()
 	}
 }
 
@@ -138,7 +142,9 @@ func TestOneCommit(t *testing.T) {
 	}
 
 	for ind, peer := range cfg.peers {
+		peer.lock.Lock()
 		fmt.Printf("peer %v log: %v\n", ind, peer.log)
+		peer.lock.Unlock()
 	}
 
 }

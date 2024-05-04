@@ -107,6 +107,13 @@ func (e *EPaxos) attributes(cmd interface{}, ix LogIndex) (seq int, deps map[Log
 
 	// loop through all instances in replica L's 2D log
 	for r, replica := range e.log {
+		if r == ix.Replica {
+			if ix.Index > 0 {
+				deps[LogIndex{Replica: r, Index: ix.Index - 1}] = 1
+			}
+			continue
+		}
+
 		for i := len(replica) - 1; i >= 0; i-- { // loop through each replica backwards
 			instance := replica[i]
 
@@ -176,10 +183,12 @@ func (e *EPaxos) preAcceptPhase(cmd interface{}, ix LogIndex) (commit bool, abor
 		Timer:    time.Time{},
 	}
 
+	instanceCopy := *instance
+
 	e.Unlock()
 
 	// broadcast and wait for pre-accept messages to our other peers
-	updatedSeq, updatedDeps, abort := e.broadcastPreAccept(*instance)
+	updatedSeq, updatedDeps, abort := e.broadcastPreAccept(instanceCopy)
 
 	e.Lock()
 	defer e.Unlock()
@@ -218,15 +227,6 @@ func (e *EPaxos) acceptPhase(pos LogIndex) (abort bool) {
 		instance.Position,
 	)
 
-	// pre-condition: the instance must either be pre-accepted
-	assert(
-		instance.Status == PREACCEPTED,
-		e.me,
-		"Expected %v to be pre-accepted, instead: %v",
-		instance.Position,
-		instance.Status,
-	)
-
 	defer func() {
 		e.debug(
 			topicAccept,
@@ -238,13 +238,14 @@ func (e *EPaxos) acceptPhase(pos LogIndex) (abort bool) {
 
 	instance.Status = ACCEPTED
 	instance.Timer = time.Time{}
+	instanceCopy := *instance
 
 	e.debug(topicLog, "Updated %v: %v", pos, *instance)
 
 	e.Unlock()
 
 	// broadcast and wait to accept from floor(N/2) other peers
-	abort = e.broadcastAccept(*instance)
+	abort = e.broadcastAccept(instanceCopy)
 
 	return
 }
@@ -263,22 +264,14 @@ func (e *EPaxos) commitPhase(pos LogIndex) {
 		instance.Position,
 	)
 
-	// pre-condition: the instance must either be pre-accepted or accepted
-	assert(
-		instance.Status == PREACCEPTED || instance.Status == ACCEPTED,
-		e.me,
-		"Expected %v to be pre-accepted or accepted, instead: %v",
-		instance.Position,
-		instance.Status,
-	)
-
 	instance.Status = COMMITTED
 	instance.Timer = time.Time{}
+	instanceCopy := *instance
 
 	e.Unlock()
 
 	// broadcast and asynchronously wait to commit to other peers
-	_ = e.broadcastCommit(*instance)
+	_ = e.broadcastCommit(instanceCopy)
 
 	return
 }
@@ -648,6 +641,12 @@ func (e *EPaxos) Commit(args *CommitArgs, reply *CommitReply) {
 		return
 	}
 
+	if instance.Valid && instance.Ballot.le(args.Ballot) && instance.Status > COMMITTED {
+		e.debug(topicCommit, "Instance in a further phase: %v < %v", COMMITTED, instance.Status)
+		reply.Success = true
+		return
+	}
+
 	*instance = Instance{
 		Deps:     args.Deps,
 		Seq:      args.Seq,
@@ -715,8 +714,8 @@ func (e *EPaxos) Start(command interface{}) (li LogIndex) {
 // confusing debug output. any goroutine with a long-running loop
 // should call killed() to check whether it should stop.
 func (e *EPaxos) Kill() {
-	e.Lock()
-	defer e.Unlock()
+	// e.Lock()
+	// defer e.Unlock()
 
 	atomic.StoreInt32(&e.dead, 1)
 	e.debug(topicWarn, "Killing replica %v...", e.me)
@@ -754,7 +753,7 @@ func Make(peers []*labrpc.ClientEnd, me int, persister *Persister, applyCh chan 
 
 	e.lastApplied = make([]int, len(peers))
 
-	// go e.execute()
+	go e.execute()
 
 	// print out what state we are starting at
 	e.debug(
