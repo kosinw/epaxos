@@ -34,7 +34,7 @@ func (e *EPaxos) execDFs(replica int, curr int, disc [][]int, low [][]int, stack
 	inStack[replica][curr] = true
 	for instance, _ := range e.log[replica][curr].Deps {
 		//We wait if the dependency is not committed yet
-		for len(e.log[instance.Replica]) <= instance.Index || e.log[instance.Replica][instance.Index].Status < COMMITTED {
+		for len(e.log[instance.Replica]) <= instance.Index || e.log[instance.Replica][instance.Index].Status < Committed {
 			e.lock.Unlock()
 			//	fmt.Printf("waiting for %v status %v", instance, e.status[instance.Replica][instance.Index])
 			//ADJUST
@@ -42,7 +42,7 @@ func (e *EPaxos) execDFs(replica int, curr int, disc [][]int, low [][]int, stack
 			e.lock.Lock()
 		}
 
-		if e.log[instance.Replica][instance.Index].Status == EXECUTED {
+		if e.log[instance.Replica][instance.Index].Status == Executed {
 			continue
 		}
 		// if(!visited[edge.first]){
@@ -78,7 +78,7 @@ func (e *EPaxos) execDFs(replica int, curr int, disc [][]int, low [][]int, stack
 		sort.Slice(sorted, less)
 		for _, instance := range sorted {
 
-			if e.log[instance.Position.Replica][instance.Position.Index].Status == EXECUTED {
+			if e.log[instance.Position.Replica][instance.Position.Index].Status == Executed {
 				fmt.Printf("ERROR, already executed%v.%v \n", instance.Position.Replica, instance.Position.Index)
 				break
 			}
@@ -86,7 +86,7 @@ func (e *EPaxos) execDFs(replica int, curr int, disc [][]int, low [][]int, stack
 			e.lock.Unlock()
 			e.applyCh <- instance
 			e.lock.Lock()
-			e.log[instance.Position.Replica][instance.Position.Index].Status = EXECUTED
+			e.log[instance.Position.Replica][instance.Position.Index].Status = Executed
 			executed = true
 		}
 		// sccs[c.Replica][c.Index] = *counter
@@ -122,7 +122,7 @@ func (e *EPaxos) scc(n int) bool {
 	executed := false
 	for R := 0; R < n; R++ {
 		for i := e.lastApplied[R] + 1; i < len(e.log[R]); i++ {
-			if e.log[R][i].Status == EXECUTED {
+			if e.log[R][i].Status == Executed {
 				e.lastApplied[R] += 1
 				continue
 			}

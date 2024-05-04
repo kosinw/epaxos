@@ -9,8 +9,12 @@ type LogIndex struct {
 
 const ReplicaAlphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
 
+func replicaName(replica int) string {
+	return string(ReplicaAlphabet[replica])
+}
+
 func (li LogIndex) String() string {
-	return fmt.Sprintf("%c.%v", ReplicaAlphabet[li.Replica], li.Index)
+	return fmt.Sprintf("%v.%v", replicaName(li.Replica), li.Index)
 }
 
 type Instance struct {
@@ -20,16 +24,17 @@ type Instance struct {
 
 	Position LogIndex
 	Status   Status // current status of instance
+	Ballot   Ballot
 }
 
 // possible statuses of an instance
-type Status int
+type Status string
 
 const (
-	PREACCEPTED Status = iota
-	ACCEPTED
-	COMMITTED
-	EXECUTED
+	PreAccepted Status = "pre-accepted"
+	Accepted           = "accepted"
+	Committed          = "committed"
+	Executed           = "executed"
 )
 
 type Ballot struct {
