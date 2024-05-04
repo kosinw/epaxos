@@ -18,13 +18,12 @@ func (li LogIndex) String() string {
 }
 
 type Instance struct {
-	Command interface{}      // state machine command
-	Deps    map[LogIndex]int // for all instances that this command depends on, maps its LogIndex to 1
-	Seq     int              // index that entry will appear at if it's ever committed
-
-	Position LogIndex
-	Status   Status // current status of instance
-	Ballot   Ballot
+	Command  interface{}      // state machine command
+	Deps     map[LogIndex]int // for all instances that this command depends on, maps its LogIndex to 1
+	Seq      int              // index that entry will appear at if it's ever committed
+	Position LogIndex         // instance number
+	Status   Status           // current status of instance
+	Ballot   Ballot           // ballot number
 }
 
 // possible statuses of an instance
@@ -44,12 +43,11 @@ type Ballot struct {
 
 // Pre-Accept RPC arguments structure
 type PreAcceptArgs struct {
-	Command interface{}      // command
-	Deps    map[LogIndex]int // list of all instances that contain commands that interfere with this command
-	Seq     int              // sequence number used to break dependencies
-
-	Ballot   Ballot   // ballot number + replica number
-	Position LogIndex // position of original command leader
+	Command  interface{}      // command
+	Deps     map[LogIndex]int // list of all instances that contain commands that interfere with this command
+	Seq      int              // sequence number used to break dependencies
+	Ballot   Ballot           // ballot number + replica number
+	Position LogIndex         // position of original command leader
 }
 
 // Pre-Accept RPC reply structure

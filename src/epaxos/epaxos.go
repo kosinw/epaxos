@@ -13,12 +13,15 @@ package epaxos
 //   should send an Instance to the service (or tester) in the same server.
 
 import (
-	// "fmt"
 	"sync"
 	"sync/atomic"
 	"time"
 
 	"6.5840/labrpc"
+)
+
+const (
+	PreAcceptTimeout = 50 * time.Millisecond
 )
 
 // A Go type representing the persistent log.
@@ -79,8 +82,8 @@ type EPaxos struct {
 	log       PaxosLog // log across all replicas; nested array indexed by replica number, instance number
 	nextIndex int      // index of next instance to be added to this replica
 
-	instanceBallots [][]int // ballot number of each instance in each replica
-	myBallot        int     // ballot number of this replica
+	// instanceBallots [][]int // ballot number of each instance in each replica
+	// myBallot        int     // ballot number of this replica
 
 	lastApplied []int // index of highest log entry known to be applied to state machine
 
@@ -178,6 +181,7 @@ func (e *EPaxos) makeInstance(cmd interface{}, index LogIndex, deps map[LogIndex
 		Command:  cmd,
 		Position: index,
 		Status:   PreAccepted,
+		Ballot:   Ballot{BallotNum: 0, ReplicaNum: index.Replica},
 	}
 
 	e.log[index.Replica][index.Index] = instance
@@ -189,27 +193,27 @@ func (e *EPaxos) makeInstance(cmd interface{}, index LogIndex, deps map[LogIndex
 
 // phase1 executes the pre-accept phase for the EPaxos commit protocol.
 // Returns true if we can execute the commit phase next; otherwise, returns false.
-// func (e *EPaxos) phase1(cmd interface{}, ix LogIndex) (commit bool) {
-// 	e.Lock()
+func (e *EPaxos) phase1(cmd interface{}, ix LogIndex) (commit bool) {
+	e.Lock()
 
-// 	assert(ix.Replica == e.me, e.me, "log index %v should have replica %v", ix, replicaName(e.me))
+	assert(ix.Replica == e.me, e.me, "log index %v should have replica %v", ix, replicaName(e.me))
 
-// 	// calculate seq and deps
-// 	seq, deps := e.attributes(cmd, ix)
+	// calculate seq and deps
+	seq, deps := e.attributes(cmd, ix)
 
-// 	// put cmd into our log
-// 	instance := e.makeInstance(cmd, ix, deps, seq)
+	// put cmd into our log
+	instance := e.makeInstance(cmd, ix, deps, seq)
 
-// 	e.Unlock()
+	e.Unlock()
 
-// 	// broadcast and wait for pre-accept messages to our other peers
-// 	updatedSeq, updatedDeps = e.broadcastPreAccept(instance)
+	// broadcast and wait for pre-accept messages to our other peers
+	updatedSeq, updatedDeps := e.broadcastPreAccept(instance)
 
-// 	// only commit if nothing changed
-// 	commit = (seq == updatedSeq) && (mapsEqual(deps, updatedDeps))
+	// only commit if nothing changed
+	commit = (seq == updatedSeq) && (mapsEqual(deps, updatedDeps))
 
-// 	return
-// }
+	return
+}
 
 func (e *EPaxos) processRequest(cmd interface{}, instanceNum int) {
 	e.Lock()
@@ -332,55 +336,95 @@ func (e *EPaxos) processRequest(cmd interface{}, instanceNum int) {
 }
 
 // call when holding e.Lock()
-func (e *EPaxos) broadcastPreAccept(peer int, instance Instance, numResponses *int, fail chan bool, responses *map[int]PreAcceptReply, responsesLock *sync.Mutex) {
-	// fmt.Printf("[peer %v] in pre-accept\n", peer)
-	e.lock.Lock()
-	for !e.killed() {
-		// fmt.Printf("[peer %v, command %v] in loop\n", peer, cmd)
-		cmd, deps, seq, pos := instance.Command, instance.Deps, instance.Seq, instance.Position
-		args := PreAcceptArgs{Command: cmd, Deps: deps, Seq: seq, Ballot: Ballot{BallotNum: e.myBallot, ReplicaNum: e.me}, Position: pos}
-		reply := PreAcceptReply{}
-		e.lock.Unlock()
-		ok := e.sendPreAccept(peer, &args, &reply)
-		// fmt.Printf("[peer %v, command %v] result of sendPreAccept: %v\n", peer, cmd, ok)
-		if ok {
-			e.lock.Lock()
-			if !reply.Success {
-				fail <- false
-			}
-			responsesLock.Lock()
-			(*responses)[peer] = reply
-			responsesLock.Unlock()
-			*numResponses++
-			// fmt.Printf("[peer %v, command %v] replying to PreAccept, numResponses: %v\n", peer, cmd, *numResponses)
-			e.lock.Unlock()
-			return
-		} else { // keep trying if not ok
-			time.Sleep(10 * time.Millisecond)
-		}
-	}
-}
+// func (e *EPaxos) broadcastPreAccept(peer int, instance Instance, numResponses *int, fail chan bool, responses *map[int]PreAcceptReply, responsesLock *sync.Mutex) {
+// 	// fmt.Printf("[peer %v] in pre-accept\n", peer)
+// 	e.lock.Lock()
+// 	for !e.killed() {
+// 		// fmt.Printf("[peer %v, command %v] in loop\n", peer, cmd)
+// 		cmd, deps, seq, pos := instance.Command, instance.Deps, instance.Seq, instance.Position
+// 		args := PreAcceptArgs{Command: cmd, Deps: deps, Seq: seq, Ballot: Ballot{BallotNum: e.myBallot, ReplicaNum: e.me}, Position: pos}
+// 		reply := PreAcceptReply{}
+// 		e.lock.Unlock()
+// 		ok := e.sendPreAccept(peer, &args, &reply)
+// 		// fmt.Printf("[peer %v, command %v] result of sendPreAccept: %v\n", peer, cmd, ok)
+// 		if ok {
+// 			e.lock.Lock()
+// 			if !reply.Success {
+// 				fail <- false
+// 			}
+// 			responsesLock.Lock()
+// 			(*responses)[peer] = reply
+// 			responsesLock.Unlock()
+// 			*numResponses++
+// 			// fmt.Printf("[peer %v, command %v] replying to PreAccept, numResponses: %v\n", peer, cmd, *numResponses)
+// 			e.lock.Unlock()
+// 			return
+// 		} else { // keep trying if not ok
+// 			time.Sleep(10 * time.Millisecond)
+// 		}
+// 	}
+// }
 
 // broadcastPreAccept sends out PreAccept messages to a fast quorum of nodes.
 // Returns the union of all the dependencies and the updated sequence number.
-// func (e *EPaxos) broadcastPreAccept(instance Instance) (seq int, deps map[LogIndex]int) {
-// 	total := 0
-// 	successes := 0
-// 	lk := sync.NewCond(new(sync.Mutex))
+func (e *EPaxos) broadcastPreAccept(instance Instance) (seq int, deps map[LogIndex]int) {
+	total := 0
+	successes := 0
+	replies := make([]PreAcceptReply, e.numPeers())
 
-// 	// TODO(kosinw): We should implement the thrifty optimization from 6.2
-// 	for i := 0; i < e.numPeers(); i++ {
-// 		if i == e.me {
-// 			continue
-// 		}
+	lk := sync.NewCond(new(sync.Mutex))
 
-// 		go func(ii int) {
-// 			cmd, deps, seq, pos := instance.Command, instance.Deps, instance.Seq, instance.Position
-// 		}(i)
-// 	}
+	cmd, deps, seq, pos, ballot := instance.Command, instance.Deps, instance.Seq, instance.Position, instance.Ballot
 
-// 	return
-// }
+	args := PreAcceptArgs{
+		Command:  cmd,
+		Deps:     deps,
+		Seq:      seq,
+		Ballot:   ballot,
+		Position: pos,
+	}
+
+	// TODO(kosinw): We should implement the thrifty optimization from 6.2
+	for i := 0; i < e.numPeers(); i++ {
+		if i == e.me {
+			continue
+		}
+
+		go func(peer int) {
+			reply := PreAcceptReply{}
+
+			for !e.sendPreAccept(peer, &args, &reply) {
+				// Sleep a little bit and keep trying...
+				time.Sleep(PreAcceptTimeout)
+				reply = PreAcceptReply{}
+			}
+
+			lk.L.Lock()
+			defer lk.L.Unlock()
+
+			lk.Broadcast()
+
+			if reply.Success {
+				successes++
+			}
+
+			replies[peer] = reply
+
+			total++
+		}(i)
+	}
+
+	lk.L.Lock()
+	defer lk.L.Unlock()
+
+	for !e.killed() {
+		lk.Wait()
+
+		// Check if still need to wait for fast path quorum
+	}
+
+	return
+}
 
 // PreAccept RPC handler.
 func (e *EPaxos) PreAccept(args *PreAcceptArgs, reply *PreAcceptReply) {
@@ -450,7 +494,15 @@ func (e *EPaxos) sendPreAccept(server int, args *PreAcceptArgs, reply *PreAccept
 	// fmt.Printf("[command %v] sending PreAccept from %v to %v\n", args.Command, e.me, server)
 	e.debug(topicRpc, "Calling %v.PreAccept...", replicaName(server))
 	e.debug(topicRpc, "%#v", args)
+
 	ok := e.peers[server].Call("EPaxos.PreAccept", args, reply)
+
+	if ok {
+		e.debug(topicRpc, "Finishing %v.PreAccept...", replicaName(server))
+		e.debug(topicRpc, "%#v", reply)
+	} else {
+		e.debug(topicWarn, "Dropping %v.PreAccept...", replicaName(server))
+	}
 	return ok
 }
 
