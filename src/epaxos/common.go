@@ -32,22 +32,65 @@ type Instance struct {
 }
 
 // possible statuses of an instance
-type Status string
+type Status int
 
 const (
-	PreAccepted Status = "pre-accepted"
-	Accepted           = "accepted"
-	Committed          = "committed"
-	Executed           = "executed"
+	PreAccepted Status = iota
+	Accepted
+	Committed
+	Executed
 )
+
+func (s Status) String() string {
+	switch s {
+	case PreAccepted:
+		return "pre-accepted"
+	case Accepted:
+		return "accepted"
+	case Committed:
+		return "committed"
+	case Executed:
+		return "executed"
+	}
+
+	return "unknown"
+}
 
 type Ballot struct {
 	BallotNum  int // ballot number
 	ReplicaNum int // replica that sent the ballot (necessary for explicit prepare)
 }
 
+func (b Ballot) lt(o Ballot) bool {
+	if b.BallotNum == o.BallotNum {
+		return b.ReplicaNum < o.ReplicaNum
+	}
+
+	return b.BallotNum < o.BallotNum
+}
+
+func (b Ballot) eq(o Ballot) bool {
+	if b.BallotNum == o.BallotNum {
+		return b.ReplicaNum == o.ReplicaNum
+	}
+
+	return false
+}
+
+func (b Ballot) le(o Ballot) bool {
+	return b.lt(o) || b.eq(o)
+}
+
+func (b Ballot) gt(o Ballot) bool {
+	return !b.le(o)
+}
+
+func (b Ballot) ge(o Ballot) bool {
+	return b.gt(o) || b.eq(o)
+}
+
 func (b Ballot) String() string {
-	return fmt.Sprintf("%v.%v", replicaName(b.ReplicaNum), b.BallotNum)
+	return fmt.Sprintf("epoch.%v.%v", replicaName(b.ReplicaNum), b.BallotNum)
 }
 
 // Pre-Accept RPC arguments structure
@@ -84,12 +127,11 @@ type AcceptReply struct {
 
 // Commit RPC arguments structure
 type CommitArgs struct {
-	Command interface{}      // command
-	Deps    map[LogIndex]int // list of all instances that contain commands that interfere with this command
-	Seq     int              // sequence number used to break dependencies
-
-	Ballot   Ballot   // ballot number
-	Position LogIndex // position of original command leader
+	Command  interface{}      // command
+	Deps     map[LogIndex]int // list of all instances that contain commands that interfere with this command
+	Seq      int              // sequence number used to break dependencies
+	Ballot   Ballot           // ballot number
+	Position LogIndex         // position of original command leader
 }
 
 // Commit RPC reply structure
