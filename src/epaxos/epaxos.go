@@ -131,20 +131,19 @@ func unionMaps(map1, map2 map[LogIndex]int) map[LogIndex]int {
 	return unionMap
 }
 
-// func (e *EPaxos)
-
-func (e *EPaxos) processRequest(cmd interface{}, instanceNum int) {
-	e.Lock()
+// attributes calculates the sequence number and dependencies for a command at current instance number.
+func (e *EPaxos) attributes(cmd interface{}, instanceNum int) (seq int, deps map[LogIndex]int) {
+	ix := LogIndex{Replica: e.me, Index: instanceNum}
 
 	// find seq num & deps
 	// assuming every instance depends on the instance before it within a replica
 	maxSeq := 0
-	deps := make(map[LogIndex]int)
+	deps = make(map[LogIndex]int)
 	// loop through all instances in replica L's 2D log
 	for r, replica := range e.log {
 		for i := len(replica) - 1; i >= 0; i-- { // loop through each replica backwards
-			// fmt.Printf("replica %v, i %v, len(replica) %v\n", replica, i, len(replica))
 			instance := replica[i]
+
 			if e.interferenceChecker(cmd, instance.Command) {
 				deps[LogIndex{Replica: r, Index: i}] = 1
 				if instance.Seq > maxSeq {
@@ -154,12 +153,26 @@ func (e *EPaxos) processRequest(cmd interface{}, instanceNum int) {
 			}
 		}
 	}
+
 	// seq is larger than seq of all interfering commands in deps
-	seq := maxSeq + 1
+	seq = maxSeq + 1
+
 	// extend this replica, then append to this replica's logs
 	for len(e.log[e.me]) <= instanceNum {
 		e.log[e.me] = append(e.log[e.me], Instance{})
 	}
+
+	e.debug(topicInfo, "%v: deps: %v", ix, deps)
+	e.debug(topicInfo, "%v: seq: %v", ix, seq)
+
+	return
+}
+
+func (e *EPaxos) processRequest(cmd interface{}, instanceNum int) {
+	e.Lock()
+
+	seq, deps := e.attributes(cmd, instanceNum)
+
 	e.log[e.me][instanceNum] = Instance{
 		Deps:    deps,
 		Seq:     seq,

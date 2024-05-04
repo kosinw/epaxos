@@ -7,8 +7,10 @@ type LogIndex struct {
 	Index   int // index # of this entry within the log
 }
 
+const ReplicaAlphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+
 func (li LogIndex) String() string {
-	return fmt.Sprintf("%v.%v", li.Replica, li.Index)
+	return fmt.Sprintf("%c.%v", ReplicaAlphabet[li.Replica], li.Index)
 }
 
 type Instance struct {
