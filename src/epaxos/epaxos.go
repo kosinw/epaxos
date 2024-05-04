@@ -20,10 +20,6 @@ import (
 	"6.5840/labrpc"
 )
 
-const (
-	PreAcceptTimeout = 50 * time.Millisecond
-)
-
 // A Go type representing the persistent log.
 type PaxosLog [][]Instance
 
@@ -88,7 +84,7 @@ type EPaxos struct {
 	lastApplied []int // index of highest log entry known to be applied to state machine
 
 	// so we can run a background goroutine to check if whether any timer has expired so we can step in and run explicit prepare for that instance
-	timers [][]time.Time // time that each instance started processing an RPC
+	// timers [][]time.Time // time that each instance started processing an RPC
 
 	// conflicts       []map[string]int // a slice of maps where index i represents replica i & maps the key of command
 	// to the highest conflicting instance # within that replica
@@ -100,7 +96,7 @@ func (e *EPaxos) numPeers() int {
 
 // # replicas in fast path quorum
 func (e *EPaxos) numFastPath() int {
-	return e.numPeers() - 2
+	return e.numPeers() - 1
 }
 
 // checks if two maps are equal
@@ -108,9 +104,8 @@ func mapsEqual(map1, map2 map[LogIndex]int) bool {
 	if len(map1) != len(map2) {
 		return false
 	}
-	for key, value1 := range map1 {
-		value2, ok := map2[key]
-		if !ok || value1 != value2 {
+	for key, _ := range map1 {
+		if _, ok := map2[key]; !ok {
 			return false
 		}
 	}
@@ -134,25 +129,22 @@ func (e *EPaxos) attributes(cmd interface{}, ix LogIndex) (seq int, deps map[Log
 	// find seq num & deps
 	// assuming every instance depends on the instance before it within a replica
 	maxSeq := 0
-	deps = make(map[LogIndex]int)
+	deps = map[LogIndex]int{}
 
 	// loop through all instances in replica L's 2D log
 	for r, replica := range e.log {
-		end := len(replica) - 1
-
 		// NOTE(kosinw): We don't want to have dependencies on later instances
-		if r == e.me {
-			end = min(end, ix.Index-1)
+		if r == ix.Replica && ix.Index > 0 {
+			deps[LogIndex{Replica: ix.Replica, Index: ix.Index - 1}] = 1
+			continue
 		}
 
-		for i := end; i >= 0; i-- { // loop through each replica backwards
+		for i := len(replica) - 1; i >= 0; i-- { // loop through each replica backwards
 			instance := replica[i]
 
 			if e.interferenceChecker(cmd, instance.Command) {
 				deps[LogIndex{Replica: r, Index: i}] = 1
-				if instance.Seq > maxSeq {
-					maxSeq = instance.Seq
-				}
+				maxSeq = max(maxSeq, instance.Seq)
 				break // only find the latest instance that interferes
 			}
 		}
@@ -169,34 +161,62 @@ func (e *EPaxos) attributes(cmd interface{}, ix LogIndex) (seq int, deps map[Log
 
 // makeInstance adds [cmd] to instance log with given [deps] and [seq].
 func (e *EPaxos) makeInstance(cmd interface{}, index LogIndex, deps map[LogIndex]int, seq int) Instance {
-	// extend this replica, then append to this replica's logs
-	for len(e.log[index.Replica]) <= index.Index {
-		e.log[index.Replica] = append(e.log[index.Replica], Instance{})
-	}
+	instance := e.getInstance(index)
 
 	// Update our log
-	instance := Instance{
+	*instance = Instance{
 		Deps:     deps,
 		Seq:      seq,
 		Command:  cmd,
 		Position: index,
 		Status:   PreAccepted,
 		Ballot:   Ballot{BallotNum: 0, ReplicaNum: index.Replica},
+		Valid:    true,
 	}
 
-	e.log[index.Replica][index.Index] = instance
+	e.debug(topicLog, "Created %v: %v", index, *instance)
 
-	e.debug(topicLog, "%v: %v", index, instance)
+	return *instance
+}
 
-	return instance
+// getInstance returns a pointer to an instance in our log given an index.
+func (e *EPaxos) getInstance(index LogIndex) *Instance {
+	// extend this replica, then append to this replica's logs
+	for len(e.log[index.Replica]) <= index.Index {
+		e.log[index.Replica] = append(e.log[index.Replica], Instance{Valid: false})
+	}
+
+	return &e.log[index.Replica][index.Index]
+}
+
+// hasHigherBallot returns true if our log has a higher ballot number than specified [ballot].
+func (e *EPaxos) hasHigherBallot(index LogIndex, ballot Ballot) bool {
+	instance := e.getInstance(index)
+
+	return instance.Valid && instance.Ballot.BallotNum > ballot.BallotNum
 }
 
 // phase1 executes the pre-accept phase for the EPaxos commit protocol.
-// Returns true if we can execute the commit phase next; otherwise, returns false.
-func (e *EPaxos) phase1(cmd interface{}, ix LogIndex) (commit bool) {
+func (e *EPaxos) phase1(cmd interface{}, ix LogIndex) (commit bool, abort bool) {
 	e.Lock()
 
+	abort = false
+	commit = false
+
 	assert(ix.Replica == e.me, e.me, "log index %v should have replica %v", ix, replicaName(e.me))
+
+	e.debug(topicInfo, "Starting pre-accept phase for instance %v...", ix)
+
+	// Print out how phase 1 ended
+	defer func() {
+		e.debug(
+			topicInfo,
+			"Ending pre-accept phase for instance %v... (commit=%v abort=%v)",
+			ix,
+			commit,
+			abort,
+		)
+	}()
 
 	// calculate seq and deps
 	seq, deps := e.attributes(cmd, ix)
@@ -207,129 +227,82 @@ func (e *EPaxos) phase1(cmd interface{}, ix LogIndex) (commit bool) {
 	e.Unlock()
 
 	// broadcast and wait for pre-accept messages to our other peers
-	updatedSeq, updatedDeps := e.broadcastPreAccept(instance)
+	updatedSeq, updatedDeps, aborted := e.broadcastPreAccept(instance, e.numFastPath())
+
+	// If we have to abort just end this phase without moving onto the next one
+	if aborted {
+		abort = true
+		commit = false
+		return
+	}
 
 	// only commit if nothing changed
 	commit = (seq == updatedSeq) && (mapsEqual(deps, updatedDeps))
+	abort = false
 
 	return
 }
 
-func (e *EPaxos) processRequest(cmd interface{}, instanceNum int) {
-	e.Lock()
+func (e *EPaxos) processRequest(cmd interface{}, ix LogIndex) {
+	// run pre-accept phase
+	_, abort := e.phase1(cmd, ix)
 
-	ix := LogIndex{Replica: e.me, Index: instanceNum}
-
-	seq, deps := e.attributes(cmd, ix)
-
-	e.makeInstance(cmd, LogIndex{Replica: e.me, Index: instanceNum}, deps, seq)
-
-	numPreAcceptResponses := 0
-	fail := make(chan bool)
-
-	// map of responses of RPCs
-	responses := make(map[int]PreAcceptReply)
-	responsesLock := sync.Mutex{}
-
-	// send PreAccept message to replicas, wait for fast quorum of replies
-	for i := 0; i < e.numPeers(); i++ {
-		if i == e.me {
-			continue
-		}
-		go e.broadcastPreAccept(i, e.log[e.me][instanceNum], &numPreAcceptResponses, fail, &responses, &responsesLock)
-	}
-	e.Unlock()
-
-	// fmt.Printf("[command %v] finished broadcasting pre-accept messages!\n", cmd)
-
-	for !e.killed() {
-		// fmt.Printf("[command %v] numPreAcceptResponses: %v\n", cmd, numPreAcceptResponses)
-		if numPreAcceptResponses >= e.numPeers()/2 {
-			break
-		}
-		time.Sleep(10 * time.Millisecond)
+	if abort {
+		return
 	}
 
-	// check if channel fail
-	select {
-	case <-fail:
-		return // one of the replicas had a higher ballot # so we return
-	default:
-	}
-	e.Lock()
-	// fmt.Printf("[command %v] reached majority of preaccepts! all logs: %v\n", cmd, e.log)
-
-	// check whether all deps & seqs are same
-	sameReplies := true
-	unionedSeq := seq
-	unionedDeps := deps
-	// only qualifies for fast path if at least N - 2 responses match
-	if len(responses) < e.numFastPath() {
-		// fmt.Printf("[command %v] don't have numFastPath %v responses, only have %v\n", cmd, e.numFastPath(), len(responses))
-		sameReplies = false
-	} else {
-		for _, response := range responses {
-			// fmt.Printf("[command %v] looping through responses, on response %v\n", cmd, response)
-			if !response.Success || !mapsEqual(deps, response.Deps) || seq != response.Seq {
-				sameReplies = false
-			}
-			// find max seq & unioned deps
-			unionedSeq = max(unionedSeq, response.Seq)
-			unionedDeps = unionMaps(unionedDeps, response.Deps)
-		}
-	}
 	// run commit phase
-	if sameReplies {
-		// fmt.Printf("[command %v] all replies are same.. running commit\n", cmd)
-		for i := 0; i < e.numPeers(); i++ {
-			if i == e.me {
-				continue
-			}
-			e.log[e.me][instanceNum].Status = Committed
-			go e.broadcastCommit(i, e.log[e.me][instanceNum])
-		}
-	} else {
-		// fmt.Printf("[command %v] either not enough replies or not all replies are same.. running accept\n", cmd)
-		numAcceptResponses := 0
-		acceptFail := make(chan bool)
-		acceptResponses := make(map[int]AcceptReply)
-		acceptResponsesLock := sync.Mutex{}
+	// if sameReplies {
+	// 	// fmt.Printf("[command %v] all replies are same.. running commit\n", cmd)
+	// 	for i := 0; i < e.numPeers(); i++ {
+	// 		if i == e.me {
+	// 			continue
+	// 		}
+	// 		e.log[e.me][instanceNum].Status = Committed
+	// 		go e.broadcastCommit(i, e.log[e.me][instanceNum])
+	// 	}
+	// } else {
+	// 	// fmt.Printf("[command %v] either not enough replies or not all replies are same.. running accept\n", cmd)
+	// 	numAcceptResponses := 0
+	// 	acceptFail := make(chan bool)
+	// 	acceptResponses := make(map[int]AcceptReply)
+	// 	acceptResponsesLock := sync.Mutex{}
 
-		// run paxos-accept phase
-		for i := 0; i < e.numPeers(); i++ {
-			if i == e.me {
-				continue
-			}
-			e.log[e.me][instanceNum].Status = Accepted
-			e.log[e.me][instanceNum].Deps = unionedDeps
-			e.log[e.me][instanceNum].Seq = unionedSeq
-			// fmt.Printf("broadcasting accept messages...\n")
-			go e.broadcastAccept(i, e.log[e.me][instanceNum], &numAcceptResponses, acceptFail, &acceptResponses, &acceptResponsesLock)
-		}
-		e.Unlock()
+	// 	// run paxos-accept phase
+	// 	for i := 0; i < e.numPeers(); i++ {
+	// 		if i == e.me {
+	// 			continue
+	// 		}
+	// 		e.log[e.me][instanceNum].Status = Accepted
+	// 		e.log[e.me][instanceNum].Deps = unionedDeps
+	// 		e.log[e.me][instanceNum].Seq = unionedSeq
+	// 		// fmt.Printf("broadcasting accept messages...\n")
+	// 		go e.broadcastAccept(i, e.log[e.me][instanceNum], &numAcceptResponses, acceptFail, &acceptResponses, &acceptResponsesLock)
+	// 	}
+	// 	e.Unlock()
 
-		for !e.killed() {
-			if numAcceptResponses >= e.numPeers()/2 {
-				break
-			}
-			time.Sleep(10 * time.Millisecond)
-		}
-		// fmt.Printf("[command %v] reached majority of accepts! all logs: %v\n", cmd, e.log)
+	// 	for !e.killed() {
+	// 		if numAcceptResponses >= e.numPeers()/2 {
+	// 			break
+	// 		}
+	// 		time.Sleep(10 * time.Millisecond)
+	// 	}
+	// 	// fmt.Printf("[command %v] reached majority of accepts! all logs: %v\n", cmd, e.log)
 
-		// run commit phase
-		e.Lock()
-		for i := 0; i < e.numPeers(); i++ {
-			if i == e.me {
-				continue
-			}
-			e.log[e.me][instanceNum].Status = Committed
-			e.log[e.me][instanceNum].Deps = unionedDeps
-			e.log[e.me][instanceNum].Seq = unionedSeq
-			// fmt.Printf("broadcasting commit messages...\n")
-			go e.broadcastCommit(i, e.log[e.me][instanceNum])
-		}
-		e.Unlock()
-	}
+	// 	// run commit phase
+	// 	e.Lock()
+	// 	for i := 0; i < e.numPeers(); i++ {
+	// 		if i == e.me {
+	// 			continue
+	// 		}
+	// 		e.log[e.me][instanceNum].Status = Committed
+	// 		e.log[e.me][instanceNum].Deps = unionedDeps
+	// 		e.log[e.me][instanceNum].Seq = unionedSeq
+	// 		// fmt.Printf("broadcasting commit messages...\n")
+	// 		go e.broadcastCommit(i, e.log[e.me][instanceNum])
+	// 	}
+	// 	e.Unlock()
+	// }
 	// fmt.Printf("[command %v] finished processing request %v! should be committed\n", cmd, instanceNum)
 	// fmt.Printf("[command %v] e.log after %v\n", cmd, e.log)
 	// send RequestReply to client?
@@ -366,22 +339,23 @@ func (e *EPaxos) processRequest(cmd interface{}, instanceNum int) {
 // }
 
 // broadcastPreAccept sends out PreAccept messages to a fast quorum of nodes.
+// [quorum] is the size of the quorum we need to satisfy.
+// [abort] means at least one replica rejected our PreAccept message meaning we are not the command leader.
 // Returns the union of all the dependencies and the updated sequence number.
-func (e *EPaxos) broadcastPreAccept(instance Instance) (seq int, deps map[LogIndex]int) {
-	total := 0
-	successes := 0
-	replies := make([]PreAcceptReply, e.numPeers())
+func (e *EPaxos) broadcastPreAccept(instance Instance, quorum int) (seq int, deps map[LogIndex]int, abort bool) {
+	replyCount := 1
+	rejectCount := 0
+	unionSeq := instance.Seq
+	unionDeps := instance.Deps
 
 	lk := sync.NewCond(new(sync.Mutex))
 
-	cmd, deps, seq, pos, ballot := instance.Command, instance.Deps, instance.Seq, instance.Position, instance.Ballot
-
 	args := PreAcceptArgs{
-		Command:  cmd,
-		Deps:     deps,
-		Seq:      seq,
-		Ballot:   ballot,
-		Position: pos,
+		Command:  instance.Command,
+		Deps:     instance.Deps,
+		Seq:      instance.Seq,
+		Ballot:   instance.Ballot,
+		Position: instance.Position,
 	}
 
 	// TODO(kosinw): We should implement the thrifty optimization from 6.2
@@ -394,23 +368,22 @@ func (e *EPaxos) broadcastPreAccept(instance Instance) (seq int, deps map[LogInd
 			reply := PreAcceptReply{}
 
 			for !e.sendPreAccept(peer, &args, &reply) {
-				// Sleep a little bit and keep trying...
-				time.Sleep(PreAcceptTimeout)
 				reply = PreAcceptReply{}
 			}
 
 			lk.L.Lock()
 			defer lk.L.Unlock()
 
-			lk.Broadcast()
+			replyCount++
 
 			if reply.Success {
-				successes++
+				unionSeq = max(unionSeq, reply.Seq)
+				unionDeps = unionMaps(unionDeps, reply.Deps)
+			} else {
+				rejectCount++
 			}
 
-			replies[peer] = reply
-
-			total++
+			lk.Broadcast()
 		}(i)
 	}
 
@@ -420,143 +393,140 @@ func (e *EPaxos) broadcastPreAccept(instance Instance) (seq int, deps map[LogInd
 	for !e.killed() {
 		lk.Wait()
 
-		// Check if still need to wait for fast path quorum
+		// Check if any of our peers have rejected our request
+		if rejectCount > 0 {
+			abort = true
+			break
+		}
+
+		// Fast path quorum
+		if replyCount >= quorum && instance.Seq == unionSeq && mapsEqual(instance.Deps, unionDeps) {
+			e.debug(topicInfo, "Received succesful fast path quorum for instance %v...", instance.Position)
+			abort = false
+			break
+		}
+
+		// Wait for all the replies
+		if replyCount == e.numPeers() {
+			e.debug(topicInfo, "Received succesful slow path quorum for instance %v...", instance.Position)
+			abort = false
+			break
+		}
 	}
+
+	seq = unionSeq
+	deps = unionDeps
 
 	return
 }
 
 // PreAccept RPC handler.
 func (e *EPaxos) PreAccept(args *PreAcceptArgs, reply *PreAcceptReply) {
-	// fmt.Printf("[peer %v, command %v] IN PREACCEPT RPC HANDLER \n", e.me, args.Command)
-	ballot := args.Ballot
-	bNum := ballot.BallotNum
-	pos := args.Position
-	instanceInd, replicaInd := pos.Index, pos.Replica
+	e.Lock()
+	defer e.Unlock()
 
-	e.lock.Lock()
-	// [insert helper] if ballot number i receive is smaller than the largest ballot number i've seen so far, reply false
-	if len(e.instanceBallots[e.me]) > instanceInd && bNum < e.instanceBallots[e.me][instanceInd] {
+	e.debug(topicRpc, "Receiving PreAccept from %v", replicaName(args.Ballot.ReplicaNum))
+
+	// First check if the ballot number is invalid for the RPC request
+	// This is done to ensure freshness of messages
+	if e.hasHigherBallot(args.Position, args.Ballot) {
+		index := args.Position
+		b := e.log[index.Replica][index.Index].Ballot
+		e.debug(topicInfo, "Ballot number too low: %v < %v", args.Ballot, b)
 		reply.Success = false
 		return
 	}
 
-	// [insert helper] start timer -- add extra entries
-	for len(e.timers[replicaInd]) <= instanceInd {
-		e.timers[replicaInd] = append(e.timers[replicaInd], time.Now())
-	}
-	e.timers[replicaInd][instanceInd] = time.Now()
+	// Next, we need to calculate deps and seq number
+	// We only initiailize them if they have not been initialized before
+	seq, deps := e.attributes(args.Command, args.Position)
+	seq = max(seq, args.Seq)
+	deps = unionMaps(deps, args.Deps)
 
-	maxSeq := args.Seq
-	cmd := args.Command
-	depsL := args.Deps
-	depsR := make(map[LogIndex]int) // construct this replica's dependencies map
-	for r, replica := range e.log {
-		for i := len(replica) - 1; i >= 0; i-- { // loop through instances of each replica backwards
-			instance := replica[i]
-			if e.interferenceChecker(cmd, instance.Command) {
-				depsR[LogIndex{Replica: r, Index: i}] = 1
-				if instance.Seq > maxSeq {
-					maxSeq = instance.Seq
-				}
-				break // only find the latest instance that interferes
-			}
-		}
-	}
-	e.lock.Unlock()
-	maxSeq += 1
+	instance := e.getInstance(args.Position)
 
-	// fmt.Printf("[peer %v preaccept, command %v] e.log %v replicaInd %v instanceInd %v \n", e.me, args.Command, e.log, replicaInd, instanceInd)
+	*instance = Instance{
+		Deps:     deps,
+		Seq:      seq,
+		Command:  args.Command,
+		Position: args.Position,
+		Status:   PreAccepted,
+		Ballot:   args.Ballot,
+		Valid:    true,
+		Timer:    time.Now(),
+	}
 
-	unionedDeps := unionMaps(depsL, depsR)
-	// extend replica L's logs within this view, then append to its logs
-	for len(e.log[replicaInd]) <= instanceInd {
-		e.log[replicaInd] = append(e.log[replicaInd], Instance{})
-	}
-	e.log[replicaInd][instanceInd] = Instance{
-		Deps:    unionedDeps,
-		Seq:     maxSeq,
-		Command: cmd,
-		Position: LogIndex{
-			Replica: replicaInd,
-			Index:   instanceInd,
-		},
-		Status: PreAccepted,
-	}
-	// fmt.Printf("[peer %v preaccept END, command %v] e.log %v\n", e.me, args.Command, e.log)
-	// reply with union of dependencies & new max seq #
-	reply.Deps = unionedDeps
-	reply.Seq = maxSeq
+	e.debug(topicLog, "Updated %v: %v", args.Position, *instance)
+
+	reply.Deps = deps
+	reply.Seq = seq
 	reply.Success = true
 }
 
 func (e *EPaxos) sendPreAccept(server int, args *PreAcceptArgs, reply *PreAcceptReply) bool {
-	// fmt.Printf("[command %v] sending PreAccept from %v to %v\n", args.Command, e.me, server)
-	e.debug(topicRpc, "Calling %v.PreAccept...", replicaName(server))
-	e.debug(topicRpc, "%#v", args)
+	e.debug(topicRpc, "Calling %v.PreAccept...: %v", replicaName(server), args)
 
 	ok := e.peers[server].Call("EPaxos.PreAccept", args, reply)
 
 	if ok {
-		e.debug(topicRpc, "Finishing %v.PreAccept...", replicaName(server))
-		e.debug(topicRpc, "%#v", reply)
+		e.debug(topicRpc, "Finishing %v.PreAccept...: %v", replicaName(server), reply)
 	} else {
 		e.debug(topicWarn, "Dropping %v.PreAccept...", replicaName(server))
 	}
 	return ok
 }
 
-func (e *EPaxos) broadcastAccept(peer int, instance Instance, numAcceptResponses *int, fail chan bool, responses *map[int]AcceptReply, responsesLock *sync.Mutex) {
-	e.lock.Lock()
-	for !e.killed() {
-		cmd, deps, seq, pos := instance.Command, instance.Deps, instance.Seq, instance.Position
-		args := AcceptArgs{Command: cmd, Deps: deps, Seq: seq, Ballot: Ballot{BallotNum: e.myBallot, ReplicaNum: e.me}, Position: pos}
-		reply := AcceptReply{}
-		e.lock.Unlock()
-		ok := e.sendAccept(peer, &args, &reply)
-		// fmt.Printf("[peer %v, command %v] result of sendAccept: %v\n", peer, cmd, ok)
-		if ok {
-			e.lock.Lock()
-			if !reply.Success {
-				fail <- false
-			}
-			responsesLock.Lock()
-			(*responses)[peer] = reply
-			responsesLock.Unlock()
-			*numAcceptResponses++
-			e.lock.Unlock()
-			return
-		} else { // keep trying if not ok
-			time.Sleep(10 * time.Millisecond)
-		}
-	}
-}
+// func (e *EPaxos) broadcastAccept(peer int, instance Instance, numAcceptResponses *int, fail chan bool, responses *map[int]AcceptReply, responsesLock *sync.Mutex) {
+// 	e.lock.Lock()
+// 	for !e.killed() {
+// 		cmd, deps, seq, pos := instance.Command, instance.Deps, instance.Seq, instance.Position
+// 		args := AcceptArgs{Command: cmd, Deps: deps, Seq: seq, Ballot: Ballot{BallotNum: e.myBallot, ReplicaNum: e.me}, Position: pos}
+// 		reply := AcceptReply{}
+// 		e.lock.Unlock()
+// 		ok := e.sendAccept(peer, &args, &reply)
+// 		// fmt.Printf("[peer %v, command %v] result of sendAccept: %v\n", peer, cmd, ok)
+// 		if ok {
+// 			e.lock.Lock()
+// 			if !reply.Success {
+// 				fail <- false
+// 			}
+// 			responsesLock.Lock()
+// 			(*responses)[peer] = reply
+// 			responsesLock.Unlock()
+// 			*numAcceptResponses++
+// 			e.lock.Unlock()
+// 			return
+// 		} else { // keep trying if not ok
+// 			time.Sleep(10 * time.Millisecond)
+// 		}
+// 	}
+// }
 
 func (e *EPaxos) Accept(args *AcceptArgs, reply *AcceptReply) {
 	e.lock.Lock()
 	defer e.lock.Unlock()
 
-	ballot := args.Ballot
-	bNum := ballot.BallotNum
-	pos := args.Position
-	instanceInd, replicaInd := pos.Index, pos.Replica
+	// ballot := args.Ballot
+	// bNum := ballot.BallotNum
+	// pos := args.Position
+	// instanceInd, replicaInd := pos.Index, pos.Replica
 
-	// ballot # check
-	if len(e.instanceBallots[e.me]) > instanceInd && bNum < e.instanceBallots[e.me][instanceInd] {
-		reply.Success = false
-		return
-	}
+	// // ballot # check
+	// if len(e.instanceBallots[e.me]) > instanceInd && bNum < e.instanceBallots[e.me][instanceInd] {
+	// 	reply.Success = false
+	// 	return
+	// }
 
-	// start timer
-	for len(e.timers[replicaInd]) <= instanceInd {
-		e.timers[replicaInd] = append(e.timers[replicaInd], time.Now())
-	}
-	e.timers[replicaInd][instanceInd] = time.Now()
+	// // start timer
+	// for len(e.timers[replicaInd]) <= instanceInd {
+	// 	e.timers[replicaInd] = append(e.timers[replicaInd], time.Now())
+	// }
+	// e.timers[replicaInd][instanceInd] = time.Now()
 
-	e.log[replicaInd][instanceInd].Status = Accepted
-	e.log[replicaInd][instanceInd].Deps = args.Deps
-	e.log[replicaInd][instanceInd].Seq = args.Seq
-	reply.Success = true
+	// e.log[replicaInd][instanceInd].Status = Accepted
+	// e.log[replicaInd][instanceInd].Deps = args.Deps
+	// e.log[replicaInd][instanceInd].Seq = args.Seq
+	// reply.Success = true
 
 }
 
@@ -565,47 +535,47 @@ func (e *EPaxos) sendAccept(server int, args *AcceptArgs, reply *AcceptReply) bo
 	return ok
 }
 
-func (e *EPaxos) broadcastCommit(peer int, instance Instance) {
-	e.lock.Lock()
-	for !e.killed() {
-		cmd, deps, seq, pos := instance.Command, instance.Deps, instance.Seq, instance.Position
-		// fmt.Printf("[peer %v, command %v] inBroadcastCommit\n", peer, cmd)
-		args := CommitArgs{Command: cmd, Deps: deps, Seq: seq, Ballot: Ballot{BallotNum: e.myBallot, ReplicaNum: e.me}, Position: pos}
-		reply := CommitReply{}
-		e.lock.Unlock()
-		ok := e.sendCommit(peer, &args, &reply)
-		// fmt.Printf("[peer %v, command %v] result of Commit: %v\n", peer, cmd, ok)
-		if ok {
-			return
-		} else { // keep trying if not ok
-			time.Sleep(10 * time.Millisecond)
-		}
-	}
-}
+// func (e *EPaxos) broadcastCommit(peer int, instance Instance) {
+// 	e.lock.Lock()
+// 	for !e.killed() {
+// 		cmd, deps, seq, pos := instance.Command, instance.Deps, instance.Seq, instance.Position
+// 		// fmt.Printf("[peer %v, command %v] inBroadcastCommit\n", peer, cmd)
+// 		args := CommitArgs{Command: cmd, Deps: deps, Seq: seq, Ballot: Ballot{BallotNum: e.myBallot, ReplicaNum: e.me}, Position: pos}
+// 		reply := CommitReply{}
+// 		e.lock.Unlock()
+// 		ok := e.sendCommit(peer, &args, &reply)
+// 		// fmt.Printf("[peer %v, command %v] result of Commit: %v\n", peer, cmd, ok)
+// 		if ok {
+// 			return
+// 		} else { // keep trying if not ok
+// 			time.Sleep(10 * time.Millisecond)
+// 		}
+// 	}
+// }
 
 func (e *EPaxos) Commit(args *CommitArgs, reply *CommitReply) {
 	e.lock.Lock()
 	defer e.lock.Unlock()
 
-	ballot := args.Ballot
-	bNum := ballot.BallotNum
-	pos := args.Position
-	instanceInd, replicaInd := pos.Index, pos.Replica
+	// ballot := args.Ballot
+	// bNum := ballot.BallotNum
+	// pos := args.Position
+	// instanceInd, replicaInd := pos.Index, pos.Replica
 
-	// ballot # check
-	if len(e.instanceBallots[e.me]) > instanceInd && bNum < e.instanceBallots[e.me][instanceInd] {
-		reply.Success = false
-		return
-	}
+	// // ballot # check
+	// if len(e.instanceBallots[e.me]) > instanceInd && bNum < e.instanceBallots[e.me][instanceInd] {
+	// 	reply.Success = false
+	// 	return
+	// }
 
-	// start timer
-	for len(e.timers[replicaInd]) <= instanceInd {
-		e.timers[replicaInd] = append(e.timers[replicaInd], time.Now())
-	}
-	e.timers[replicaInd][instanceInd] = time.Now()
+	// // start timer
+	// for len(e.timers[replicaInd]) <= instanceInd {
+	// 	e.timers[replicaInd] = append(e.timers[replicaInd], time.Now())
+	// }
+	// e.timers[replicaInd][instanceInd] = time.Now()
 
-	e.log[replicaInd][instanceInd].Status = Committed
-	reply.Success = true
+	// e.log[replicaInd][instanceInd].Status = Committed
+	// reply.Success = true
 }
 
 func (e *EPaxos) sendCommit(server int, args *CommitArgs, reply *CommitReply) bool {
@@ -638,7 +608,7 @@ func (e *EPaxos) Start(command interface{}) (li LogIndex) {
 
 	e.debug(topicClient, "Starting command at instance %v", li)
 
-	go e.processRequest(command, instanceNum)
+	go e.processRequest(command, li)
 
 	return
 }
@@ -693,17 +663,16 @@ func Make(peers []*labrpc.ClientEnd, me int, persister *Persister, applyCh chan 
 	e.log = e.makeLog()
 	e.nextIndex = 0
 
-	e.instanceBallots = make([][]int, len(peers))
-	e.myBallot = 0
+	// e.instanceBallots = make([][]int, len(peers))
+	// e.myBallot = 0
 
 	e.lastApplied = make([]int, len(peers))
-	e.timers = make([][]time.Time, len(peers))
+	// e.timers = make([][]time.Time, len(peers))
 
 	// print out what state we are starting at
 	e.debug(
 		topicStart,
-		"Starting at ballot: %v, nextIndex: %v",
-		e.myBallot,
+		"Starting at nextIndex: %v",
 		e.nextIndex,
 	)
 

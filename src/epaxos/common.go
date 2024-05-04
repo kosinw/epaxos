@@ -1,6 +1,9 @@
 package epaxos
 
-import "fmt"
+import (
+	"fmt"
+	"time"
+)
 
 type LogIndex struct {
 	Replica int // # of replica that this log belongs to
@@ -24,6 +27,8 @@ type Instance struct {
 	Position LogIndex         // instance number
 	Status   Status           // current status of instance
 	Ballot   Ballot           // ballot number
+	Valid    bool             // true if instance has been initialized
+	Timer    time.Time        // timestamp of when to restart instance
 }
 
 // possible statuses of an instance
@@ -39,6 +44,10 @@ const (
 type Ballot struct {
 	BallotNum  int // ballot number
 	ReplicaNum int // replica that sent the ballot (necessary for explicit prepare)
+}
+
+func (b Ballot) String() string {
+	return fmt.Sprintf("%v.%v", replicaName(b.ReplicaNum), b.BallotNum)
 }
 
 // Pre-Accept RPC arguments structure
