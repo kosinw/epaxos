@@ -107,12 +107,6 @@ func (e *EPaxos) attributes(cmd interface{}, ix LogIndex) (seq int, deps map[Log
 
 	// loop through all instances in replica L's 2D log
 	for r, replica := range e.log {
-		if r == ix.Replica {
-			if ix.Index > 0 {
-				deps[LogIndex{Replica: r, Index: ix.Index - 1}] = 1
-			}
-			continue
-		}
 
 		for i := len(replica) - 1; i >= 0; i-- { // loop through each replica backwards
 			instance := replica[i]
@@ -123,6 +117,10 @@ func (e *EPaxos) attributes(cmd interface{}, ix LogIndex) (seq int, deps map[Log
 				break // only find the latest instance that interferes
 			}
 		}
+	}
+
+	if ix.Index > 0 {
+		deps[LogIndex{Replica: ix.Replica, Index: ix.Index - 1}] = 1
 	}
 
 	// seq is larger than seq of all interfering commands in deps
@@ -267,6 +265,8 @@ func (e *EPaxos) commitPhase(pos LogIndex) {
 	instance.Status = COMMITTED
 	instance.Timer = time.Time{}
 	instanceCopy := *instance
+
+	e.debug(topicCommit, "Updated %v: %v", pos, *instance)
 
 	e.Unlock()
 
@@ -424,7 +424,7 @@ func (e *EPaxos) PreAccept(args *PreAcceptArgs, reply *PreAcceptReply) {
 		Timer:    time.Now(),
 	}
 
-	e.debug(topicLog, "Updated %v: %v", args.Position, *instance)
+	e.debug(topicPreAccept, "Updated %v: %v", args.Position, *instance)
 
 	reply.Deps = instance.Deps
 	reply.Seq = instance.Seq
@@ -545,7 +545,7 @@ func (e *EPaxos) Accept(args *AcceptArgs, reply *AcceptReply) {
 		Timer:    time.Now(),
 	}
 
-	e.debug(topicLog, "Updated %v: %v", args.Position, *instance)
+	e.debug(topicAccept, "Updated %v: %v", args.Position, *instance)
 
 	reply.Success = true
 }
@@ -658,6 +658,8 @@ func (e *EPaxos) Commit(args *CommitArgs, reply *CommitReply) {
 		Timer:    time.Time{},
 	}
 
+	e.debug(topicCommit, "Updated %v: %v", args.Position, *instance)
+
 	reply.Success = true
 }
 
@@ -752,6 +754,10 @@ func Make(peers []*labrpc.ClientEnd, me int, persister *Persister, applyCh chan 
 	e.nextIndex = 0
 
 	e.lastApplied = make([]int, len(peers))
+
+	for i := 0; i < len(peers); i++ {
+		e.lastApplied[i] = -1
+	}
 
 	go e.execute()
 

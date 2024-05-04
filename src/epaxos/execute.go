@@ -128,6 +128,13 @@ func (e *EPaxos) scc(n int) bool {
 				continue
 			}
 			if disc[R][i] == -1 {
+				for e.log[R][i].Status < COMMITTED {
+					e.lock.Unlock()
+					//	fmt.Printf("waiting for %v status %v", instance, e.status[instance.Replica][instance.Index])
+					//ADJUST
+					time.Sleep(1000)
+					e.lock.Lock()
+				}
 
 				executed = e.execDFs(R, i, disc, low, &stack, inStack, parents, &Time, sccs, &counter) || executed
 			}
