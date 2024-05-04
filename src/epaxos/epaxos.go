@@ -754,6 +754,8 @@ func Make(peers []*labrpc.ClientEnd, me int, persister *Persister, applyCh chan 
 
 	e.lastApplied = make([]int, len(peers))
 
+	// go e.execute()
+
 	// print out what state we are starting at
 	e.debug(
 		topicStart,

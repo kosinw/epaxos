@@ -36,7 +36,7 @@ TOPICS = {
     "LEAVE": "#fe2c79",
     "MOVE": "#67a0b2",
     "QUERY": "#98719f",
-    "RPC": "#98719f",
+    "RPC": "#3772FF",
     "LOCK": "#398280",
     "PUT": "#d08341",
     "APPEND": "#fe2c79",
