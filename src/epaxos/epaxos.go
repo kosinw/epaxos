@@ -52,16 +52,16 @@ func (e *EPaxos) Unlock() {
 
 // A Go object implementing a single EPaxos peer.
 type EPaxos struct {
-	lock                sync.Mutex                        // lock to protect shared access to this peer's state
-	peers               []*labrpc.ClientEnd               // RPC end points of all peers
-	persister           *Persister                        // Object to hold this peer's persisted state
-	me                  int                               // this peer's index into peers[]
-	dead                int32                             // set by Kill()
-	applyCh             chan<- Instance                   // channel used to send client messages
-	interferenceChecker func(cmd1, cmd2 interface{}) bool // function passed in by client that checks whether two commands interfere
-	log                 PaxosLog                          // log across all replicas; nested array indexed by replica number, instance number
-	nextIndex           int                               // index of next instance to be added to this replica
-	lastApplied         []int                             // index of highest log entry known to be applied to state machine
+	lock        sync.Mutex                        // lock to protect shared access to this peer's state
+	peers       []*labrpc.ClientEnd               // RPC end points of all peers
+	persister   *Persister                        // Object to hold this peer's persisted state
+	me          int                               // this peer's index into peers[]
+	dead        int32                             // set by Kill()
+	applyCh     chan<- Instance                   // channel used to send client messages
+	interferes  func(cmd1, cmd2 interface{}) bool // function passed in by client that checks whether two commands interfere
+	log         PaxosLog                          // log across all replicas; nested array indexed by replica number, instance number
+	nextIndex   int                               // index of next instance to be added to this replica
+	lastApplied []int                             // index of highest log entry known to be applied to state machine
 }
 
 func (e *EPaxos) numPeers() int {
@@ -108,17 +108,17 @@ func (e *EPaxos) attributes(cmd interface{}, ix LogIndex) (seq int, deps map[Log
 	// loop through all instances in replica L's 2D log
 	for r, replica := range e.log {
 		// NOTE(kosinw): We don't want to have dependencies on later instances
-		if r == ix.Replica {
-			if ix.Index > 0 {
-				deps[LogIndex{Replica: ix.Replica, Index: ix.Index - 1}] = 1
-			}
-			continue
-		}
+		// if r == ix.Replica {
+		// 	if ix.Index > 0 {
+		// 		deps[LogIndex{Replica: ix.Replica, Index: ix.Index - 1}] = 1
+		// 	}
+		// 	continue
+		// }
 
 		for i := len(replica) - 1; i >= 0; i-- { // loop through each replica backwards
 			instance := replica[i]
 
-			if e.interferenceChecker(cmd, instance.Command) {
+			if instance.Valid && e.interferes(cmd, instance.Command) {
 				deps[LogIndex{Replica: r, Index: i}] = 1
 				maxSeq = max(maxSeq, instance.Seq)
 				break // only find the latest instance that interferes
@@ -145,7 +145,7 @@ func (e *EPaxos) makeInstance(cmd interface{}, index LogIndex, deps map[LogIndex
 		Seq:      seq,
 		Command:  cmd,
 		Position: index,
-		Status:   PreAccepted,
+		Status:   PREACCEPTED,
 		Ballot:   Ballot{BallotNum: 0, ReplicaNum: index.Replica},
 		Valid:    true,
 		Timer:    time.Time{},
@@ -234,14 +234,14 @@ func (e *EPaxos) commitPhase(pos LogIndex) {
 
 	// pre-condition: the instance must either be pre-accepted or accepted
 	assert(
-		instance.Status == PreAccepted || instance.Status == Accepted,
+		instance.Status == PREACCEPTED || instance.Status == ACCEPTED,
 		e.me,
 		"Expected %v to be pre-accepted or accepted, instead: %v",
 		instance.Position,
 		instance.Status,
 	)
 
-	instance.Status = Committed
+	instance.Status = COMMITTED
 	instance.Timer = time.Time{}
 
 	e.Unlock()
@@ -459,8 +459,8 @@ func (e *EPaxos) PreAccept(args *PreAcceptArgs, reply *PreAcceptReply) {
 		return
 	}
 
-	if instance.Valid && instance.Ballot.eq(args.Ballot) && instance.Status > PreAccepted {
-		e.debug(topicInfo, "Instance in a further phase: %v < %v", PreAccepted, instance.Status)
+	if instance.Valid && instance.Ballot.eq(args.Ballot) && instance.Status > PREACCEPTED {
+		e.debug(topicInfo, "Instance in a further phase: %v < %v", PREACCEPTED, instance.Status)
 		reply.Deps = instance.Deps
 		reply.Seq = instance.Seq
 		reply.Success = true
@@ -478,7 +478,7 @@ func (e *EPaxos) PreAccept(args *PreAcceptArgs, reply *PreAcceptReply) {
 		Seq:      seq,
 		Command:  args.Command,
 		Position: args.Position,
-		Status:   PreAccepted,
+		Status:   PREACCEPTED,
 		Ballot:   args.Ballot,
 		Valid:    true,
 		Timer:    time.Now(),
@@ -646,7 +646,7 @@ func (e *EPaxos) Commit(args *CommitArgs, reply *CommitReply) {
 		Seq:      args.Seq,
 		Command:  args.Command,
 		Position: args.Position,
-		Status:   Committed,
+		Status:   COMMITTED,
 		Ballot:   args.Ballot,
 		Valid:    true,
 		Timer:    time.Time{},
@@ -744,15 +744,11 @@ func Make(peers []*labrpc.ClientEnd, me int, persister *Persister, applyCh chan 
 
 	e.applyCh = applyCh
 	e.persister = persister
-	e.interferenceChecker = interferes
+	e.interferes = interferes
 	e.log = e.makeLog()
 	e.nextIndex = 0
 
-	// e.instanceBallots = make([][]int, len(peers))
-	// e.myBallot = 0
-
 	e.lastApplied = make([]int, len(peers))
-	// e.timers = make([][]time.Time, len(peers))
 
 	// print out what state we are starting at
 	e.debug(

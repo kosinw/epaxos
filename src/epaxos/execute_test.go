@@ -19,15 +19,15 @@ func TestExecute(t *testing.T) {
 	e.lastApplied = make([]int, n)
 	graph := [][]Instance{
 		//0: 0.0->1.0,
-		{Instance{Deps: map[LogIndex]int{{Replica: 1, Index: 2}: 1, {Replica: 1, Index: 0}: 1}, Seq: 1, Command: "", Position: LogIndex{0, 0}, Status: Committed}},
+		{Instance{Deps: map[LogIndex]int{{Replica: 1, Index: 2}: 1, {Replica: 1, Index: 0}: 1}, Seq: 1, Command: "", Position: LogIndex{0, 0}, Status: COMMITTED}},
 		//1: 1.0 -> 2.0, 1.1->1.2, 1.2-> 1.1,3.1
-		{Instance{Deps: map[LogIndex]int{{Replica: 2, Index: 0}: 1}, Seq: 7, Command: "hi", Position: LogIndex{1, 0}, Status: Committed}, Instance{Deps: map[LogIndex]int{{Replica: 1, Index: 2}: 1}, Seq: 6, Command: "hi", Position: LogIndex{Replica: 1, Index: 1}, Status: Committed}, Instance{Deps: map[LogIndex]int{{Replica: 3, Index: 1}: 1, {Replica: 1, Index: 1}: 1}, Seq: 12, Command: "hi", Position: LogIndex{1, 2}, Status: Committed}},
+		{Instance{Deps: map[LogIndex]int{{Replica: 2, Index: 0}: 1}, Seq: 7, Command: "hi", Position: LogIndex{1, 0}, Status: COMMITTED}, Instance{Deps: map[LogIndex]int{{Replica: 1, Index: 2}: 1}, Seq: 6, Command: "hi", Position: LogIndex{Replica: 1, Index: 1}, Status: COMMITTED}, Instance{Deps: map[LogIndex]int{{Replica: 3, Index: 1}: 1, {Replica: 1, Index: 1}: 1}, Seq: 12, Command: "hi", Position: LogIndex{1, 2}, Status: COMMITTED}},
 		//2: 2.0-> 3.1 3.0
-		{Instance{Deps: map[LogIndex]int{{Replica: 3, Index: 0}: 1, {Replica: 3, Index: 1}: 1}, Seq: 3, Command: "bye", Position: LogIndex{2, 0}, Status: Committed}},
+		{Instance{Deps: map[LogIndex]int{{Replica: 3, Index: 0}: 1, {Replica: 3, Index: 1}: 1}, Seq: 3, Command: "bye", Position: LogIndex{2, 0}, Status: COMMITTED}},
 		//3: 3.0-> 1.0, 3.1 -> 4.1
-		{Instance{Deps: map[LogIndex]int{{Replica: 1, Index: 0}: 1}, Seq: 2, Command: "hi", Position: LogIndex{3, 0}, Status: Committed}, Instance{Deps: map[LogIndex]int{{Replica: 4, Index: 1}: 1}, Seq: 5, Command: "hi", Position: LogIndex{3, 1}, Status: Committed}},
+		{Instance{Deps: map[LogIndex]int{{Replica: 1, Index: 0}: 1}, Seq: 2, Command: "hi", Position: LogIndex{3, 0}, Status: COMMITTED}, Instance{Deps: map[LogIndex]int{{Replica: 4, Index: 1}: 1}, Seq: 5, Command: "hi", Position: LogIndex{3, 1}, Status: COMMITTED}},
 		//4: 4.0->1.0, 4.1->3.0
-		{Instance{Deps: map[LogIndex]int{{Replica: 1, Index: 0}: 1}, Seq: 8, Command: "hi", Position: LogIndex{4, 0}, Status: Committed}, Instance{Deps: map[LogIndex]int{{Replica: 3, Index: 0}: 1}, Seq: 4, Command: "hi", Position: LogIndex{4, 1}, Status: Committed}},
+		{Instance{Deps: map[LogIndex]int{{Replica: 1, Index: 0}: 1}, Seq: 8, Command: "hi", Position: LogIndex{4, 0}, Status: COMMITTED}, Instance{Deps: map[LogIndex]int{{Replica: 3, Index: 0}: 1}, Seq: 4, Command: "hi", Position: LogIndex{4, 1}, Status: COMMITTED}},
 	}
 	totalEntries := 0
 	for _, r := range graph {
@@ -64,15 +64,15 @@ func TestExecute2(t *testing.T) {
 	e.lastApplied = make([]int, n)
 	graph := [][]Instance{
 		//0: 0.0->1.0,
-		{Instance{Deps: map[LogIndex]int{{Replica: 1, Index: 2}: 1, {Replica: 1, Index: 0}: 1}, Seq: 1, Command: "", Position: LogIndex{0, 0}, Status: Committed}},
+		{Instance{Deps: map[LogIndex]int{{Replica: 1, Index: 2}: 1, {Replica: 1, Index: 0}: 1}, Seq: 1, Command: "", Position: LogIndex{0, 0}, Status: COMMITTED}},
 		//1: 1.0 -> 2.0, 1.1->1.2, 1.2-> 1.1,3.1
-		{Instance{Deps: map[LogIndex]int{{Replica: 2, Index: 0}: 1}, Seq: 7, Command: "hi", Position: LogIndex{1, 0}, Status: Committed}, Instance{Deps: map[LogIndex]int{{1, 2}: 1}, Seq: 6, Command: "hi", Position: LogIndex{1, 1}, Status: Committed}, Instance{Deps: map[LogIndex]int{{3, 1}: 1, {1, 1}: 1}, Seq: 12, Command: "hi", Position: LogIndex{1, 2}, Status: Committed}},
+		{Instance{Deps: map[LogIndex]int{{Replica: 2, Index: 0}: 1}, Seq: 7, Command: "hi", Position: LogIndex{1, 0}, Status: COMMITTED}, Instance{Deps: map[LogIndex]int{{1, 2}: 1}, Seq: 6, Command: "hi", Position: LogIndex{1, 1}, Status: COMMITTED}, Instance{Deps: map[LogIndex]int{{3, 1}: 1, {1, 1}: 1}, Seq: 12, Command: "hi", Position: LogIndex{1, 2}, Status: COMMITTED}},
 		//2: 2.0-> 3.1 3.0
-		{Instance{Deps: map[LogIndex]int{{Replica: 3, Index: 0}: 1, {Replica: 3, Index: 1}: 1}, Seq: 3, Command: "bye", Position: LogIndex{2, 0}, Status: Committed}},
+		{Instance{Deps: map[LogIndex]int{{Replica: 3, Index: 0}: 1, {Replica: 3, Index: 1}: 1}, Seq: 3, Command: "bye", Position: LogIndex{2, 0}, Status: COMMITTED}},
 		//3: 3.0-> 1.0, 3.1 -> 4.1
-		{Instance{Deps: map[LogIndex]int{{Replica: 1, Index: 0}: 1}, Seq: 2, Command: "hi", Position: LogIndex{3, 0}, Status: Committed}, Instance{Deps: map[LogIndex]int{{Replica: 4, Index: 1}: 1}, Seq: 5, Command: "hi", Position: LogIndex{3, 1}, Status: Committed}},
+		{Instance{Deps: map[LogIndex]int{{Replica: 1, Index: 0}: 1}, Seq: 2, Command: "hi", Position: LogIndex{3, 0}, Status: COMMITTED}, Instance{Deps: map[LogIndex]int{{Replica: 4, Index: 1}: 1}, Seq: 5, Command: "hi", Position: LogIndex{3, 1}, Status: COMMITTED}},
 		//4: 4.0->1.0, 4.1->3.0
-		{Instance{Deps: map[LogIndex]int{{Replica: 1, Index: 0}: 1}, Seq: 8, Command: "hi", Position: LogIndex{4, 0}, Status: Committed}, Instance{Deps: map[LogIndex]int{{Replica: 3, Index: 0}: 1}, Seq: 4, Command: "hi", Position: LogIndex{4, 1}, Status: Committed}},
+		{Instance{Deps: map[LogIndex]int{{Replica: 1, Index: 0}: 1}, Seq: 8, Command: "hi", Position: LogIndex{4, 0}, Status: COMMITTED}, Instance{Deps: map[LogIndex]int{{Replica: 3, Index: 0}: 1}, Seq: 4, Command: "hi", Position: LogIndex{4, 1}, Status: COMMITTED}},
 	}
 	totalEntries := 0
 	for _, r := range graph {
@@ -108,15 +108,15 @@ func TestSCCChecker(t *testing.T) {
 	e.lastApplied = make([]int, n)
 	graph := [][]Instance{
 		//0: 0.0->1.0,
-		{Instance{Deps: map[LogIndex]int{{Replica: 1, Index: 2}: 1, {Replica: 1, Index: 0}: 1}, Seq: 1, Command: "", Position: LogIndex{0, 0}, Status: Executed}},
+		{Instance{Deps: map[LogIndex]int{{Replica: 1, Index: 2}: 1, {Replica: 1, Index: 0}: 1}, Seq: 1, Command: "", Position: LogIndex{0, 0}, Status: EXECUTED}},
 		//1: 1.0 -> 2.0, 1.1->1.2, 1.2-> 1.1,3.1
-		{Instance{Deps: map[LogIndex]int{{Replica: 2, Index: 0}: 1}, Seq: 7, Command: "hi", Position: LogIndex{1, 0}, Status: Executed}, Instance{Deps: map[LogIndex]int{{1, 2}: 1}, Seq: 6, Command: "hi", Position: LogIndex{1, 1}, Status: Executed}, Instance{Deps: map[LogIndex]int{{3, 1}: 1, {1, 1}: 1}, Seq: 12, Command: "hi", Position: LogIndex{1, 2}, Status: Executed}},
+		{Instance{Deps: map[LogIndex]int{{Replica: 2, Index: 0}: 1}, Seq: 7, Command: "hi", Position: LogIndex{1, 0}, Status: EXECUTED}, Instance{Deps: map[LogIndex]int{{1, 2}: 1}, Seq: 6, Command: "hi", Position: LogIndex{1, 1}, Status: EXECUTED}, Instance{Deps: map[LogIndex]int{{3, 1}: 1, {1, 1}: 1}, Seq: 12, Command: "hi", Position: LogIndex{1, 2}, Status: EXECUTED}},
 		//2: 2.0-> 3.1 3.0
-		{Instance{Deps: map[LogIndex]int{{Replica: 3, Index: 0}: 1, {Replica: 3, Index: 1}: 1}, Seq: 3, Command: "bye", Position: LogIndex{2, 0}, Status: Executed}},
+		{Instance{Deps: map[LogIndex]int{{Replica: 3, Index: 0}: 1, {Replica: 3, Index: 1}: 1}, Seq: 3, Command: "bye", Position: LogIndex{2, 0}, Status: EXECUTED}},
 		//3: 3.0-> 1.0, 3.1 -> 4.1
-		{Instance{Deps: map[LogIndex]int{{Replica: 1, Index: 0}: 1}, Seq: 2, Command: "hi", Position: LogIndex{3, 0}, Status: Executed}, Instance{Deps: map[LogIndex]int{{Replica: 4, Index: 1}: 1}, Seq: 5, Command: "hi", Position: LogIndex{3, 1}, Status: Executed}},
+		{Instance{Deps: map[LogIndex]int{{Replica: 1, Index: 0}: 1}, Seq: 2, Command: "hi", Position: LogIndex{3, 0}, Status: EXECUTED}, Instance{Deps: map[LogIndex]int{{Replica: 4, Index: 1}: 1}, Seq: 5, Command: "hi", Position: LogIndex{3, 1}, Status: EXECUTED}},
 		//4: 4.0->1.0, 4.1->3.0
-		{Instance{Deps: map[LogIndex]int{{Replica: 1, Index: 0}: 1}, Seq: 8, Command: "hi", Position: LogIndex{4, 0}, Status: Executed}, Instance{Deps: map[LogIndex]int{{Replica: 3, Index: 0}: 1}, Seq: 4, Command: "hi", Position: LogIndex{4, 1}, Status: Executed}},
+		{Instance{Deps: map[LogIndex]int{{Replica: 1, Index: 0}: 1}, Seq: 8, Command: "hi", Position: LogIndex{4, 0}, Status: EXECUTED}, Instance{Deps: map[LogIndex]int{{Replica: 3, Index: 0}: 1}, Seq: 4, Command: "hi", Position: LogIndex{4, 1}, Status: EXECUTED}},
 	}
 
 	e.log = graph

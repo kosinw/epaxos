@@ -35,21 +35,21 @@ type Instance struct {
 type Status int
 
 const (
-	PreAccepted Status = iota
-	Accepted
-	Committed
-	Executed
+	PREACCEPTED Status = iota
+	ACCEPTED
+	COMMITTED
+	EXECUTED
 )
 
 func (s Status) String() string {
 	switch s {
-	case PreAccepted:
+	case PREACCEPTED:
 		return "pre-accepted"
-	case Accepted:
+	case ACCEPTED:
 		return "accepted"
-	case Committed:
+	case COMMITTED:
 		return "committed"
-	case Executed:
+	case EXECUTED:
 		return "executed"
 	}
 

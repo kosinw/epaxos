@@ -29,7 +29,7 @@ func checkCommitted(peers []*EPaxos, cmds []interface{}, logIndices []LogIndex) 
 			}
 			instance := sublog[commitIndex]
 			// fmt.Printf("looking at commitIndex %v. instance %v\n", commitIndex, instance)
-			if instance.Command != cmd || instance.Status != Committed {
+			if instance.Command != cmd || instance.Status != COMMITTED {
 				// fmt.Printf("[%v] cmd %v instance.Command %v, instance.Status %v\n", peerInd, cmd, instance.Command, instance.Status)
 				committed = false
 				break
