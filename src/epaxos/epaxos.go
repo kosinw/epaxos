@@ -109,11 +109,11 @@ func (e *EPaxos) attributes(cmd interface{}, ix LogIndex) (seq int, deps map[Log
 
 	// loop through all instances in replica L's 2D log
 	for r, replica := range e.log {
-		for i := len(replica) - 1; i >= 0; i-- { // loop through each replica backwards
-			if i == ix.Replica {
-				continue
-			}
+		if r == ix.Replica {
+			continue
+		}
 
+		for i := len(replica) - 1; i >= 0; i-- { // loop through each replica backwards
 			instance := replica[i]
 
 			if instance.Valid && e.interferes(cmd, instance.Command) {
