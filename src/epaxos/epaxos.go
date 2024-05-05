@@ -107,8 +107,11 @@ func (e *EPaxos) attributes(cmd interface{}, ix LogIndex) (seq int, deps map[Log
 
 	// loop through all instances in replica L's 2D log
 	for r, replica := range e.log {
-
 		for i := len(replica) - 1; i >= 0; i-- { // loop through each replica backwards
+			if i == ix.Replica {
+				continue
+			}
+
 			instance := replica[i]
 
 			if instance.Valid && e.interferes(cmd, instance.Command) {
@@ -363,7 +366,6 @@ func (e *EPaxos) broadcastPreAccept(instance Instance) (seq int, deps map[LogInd
 		}
 
 		// Fast path quorum
-		// TODO(kosinw): This is the right number you are not checking
 		if replyCount >= quorum && instance.Seq == unionSeq && mapsEqual(instance.Deps, unionDeps) {
 			e.debug(topicPreAccept, "Received succesful fast path quorum for instance %v...", instance.Position)
 			abort = false
@@ -588,18 +590,18 @@ func (e *EPaxos) broadcastCommit(instance Instance) (abort bool) {
 
 			for !e.sendCommit(peer, &args, &reply) {
 				reply = CommitReply{}
-
-				lk.L.Lock()
-				defer lk.L.Unlock()
-
-				replyCount++
-
-				if !reply.Success {
-					rejectCount++
-				}
-
-				lk.Broadcast()
 			}
+
+			lk.L.Lock()
+			defer lk.L.Unlock()
+
+			replyCount++
+
+			if !reply.Success {
+				rejectCount++
+			}
+
+			lk.Broadcast()
 
 		}(i)
 	}
