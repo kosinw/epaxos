@@ -126,8 +126,8 @@ func (e *EPaxos) attributes(cmd interface{}, ix LogIndex) (seq int, deps map[Log
 	// seq is larger than seq of all interfering commands in deps
 	seq = maxSeq + 1
 
-	e.debug(topicInfo, "%v: deps: %v", ix, deps)
-	e.debug(topicInfo, "%v: seq: %v", ix, seq)
+	// e.debug(topicInfo, "%v: deps: %v", ix, deps)
+	// e.debug(topicInfo, "%v: seq: %v", ix, seq)
 
 	return
 }
@@ -353,21 +353,22 @@ func (e *EPaxos) broadcastPreAccept(instance Instance) (seq int, deps map[LogInd
 
 		// Check if any of our peers have rejected our request
 		if rejectCount > 0 {
-			e.debug(topicError, "Stepping down as command leader for %v...", instance.Position)
+			e.debug(topicPreAccept, "Stepping down as command leader for %v...", instance.Position)
 			abort = true
 			break
 		}
 
+		if replyCount < majority {
+			continue
+		}
+
 		// Fast path quorum
 		// TODO(kosinw): This is the right number you are not checking
-		if replyCount >= majority && instance.Seq == unionSeq && mapsEqual(instance.Deps, unionDeps) {
+		if replyCount >= quorum && instance.Seq == unionSeq && mapsEqual(instance.Deps, unionDeps) {
 			e.debug(topicPreAccept, "Received succesful fast path quorum for instance %v...", instance.Position)
 			abort = false
 			break
-		}
-
-		// Wait for all the replies
-		if replyCount >= quorum {
+		} else {
 			e.debug(topicPreAccept, "Received succesful slow path quorum for instance %v...", instance.Position)
 			abort = false
 			break
@@ -400,7 +401,7 @@ func (e *EPaxos) PreAccept(args *PreAcceptArgs, reply *PreAcceptReply) {
 		return
 	}
 
-	if instance.Valid && instance.Ballot.le(args.Ballot) && instance.Status > PREACCEPTED {
+	if instance.Valid && instance.Status > PREACCEPTED {
 		e.debug(topicPreAccept, "Instance in a further phase: %v < %v", PREACCEPTED, instance.Status)
 		reply.Deps = instance.Deps
 		reply.Seq = instance.Seq
@@ -494,7 +495,7 @@ func (e *EPaxos) broadcastAccept(instance Instance) (abort bool) {
 
 		// Check if any of our peers have rejected our request
 		if rejectCount > 0 {
-			e.debug(topicError, "Stepping down as command leader for %v...", instance.Position)
+			e.debug(topicAccept, "Stepping down as command leader for %v...", instance.Position)
 			abort = true
 			break
 		}
@@ -529,7 +530,7 @@ func (e *EPaxos) Accept(args *AcceptArgs, reply *AcceptReply) {
 		return
 	}
 
-	if instance.Valid && instance.Ballot.le(args.Ballot) && instance.Status > ACCEPTED {
+	if instance.Valid && instance.Status > ACCEPTED {
 		e.debug(topicAccept, "Instance in a further phase: %v < %v", ACCEPTED, instance.Status)
 		reply.Success = true
 		return
@@ -610,7 +611,7 @@ func (e *EPaxos) broadcastCommit(instance Instance) (abort bool) {
 		lk.Wait()
 
 		if rejectCount > 0 {
-			e.debug(topicError, "Stepping down as command leader for %v...", instance.Position)
+			e.debug(topicCommit, "Stepping down as command leader for %v...", instance.Position)
 			abort = true
 			return
 		}
@@ -642,7 +643,7 @@ func (e *EPaxos) Commit(args *CommitArgs, reply *CommitReply) {
 		return
 	}
 
-	if instance.Valid && instance.Ballot.le(args.Ballot) && instance.Status > COMMITTED {
+	if instance.Valid && instance.Status > COMMITTED {
 		e.debug(topicCommit, "Instance in a further phase: %v < %v", COMMITTED, instance.Status)
 		reply.Success = true
 		return
@@ -720,8 +721,8 @@ func (e *EPaxos) Kill() {
 	// e.Lock()
 	// defer e.Unlock()
 
-	atomic.StoreInt32(&e.dead, 1)
 	e.debug(topicWarn, "Killing replica %v...", e.me)
+	atomic.StoreInt32(&e.dead, 1)
 }
 
 func (e *EPaxos) killed() bool {

@@ -5,11 +5,11 @@ import (
 	"sort"
 	"time"
 )
-
+const SLEEP=100 * time.Millisecond
 func (e *EPaxos) execute() {
 	for !e.killed() {
 		if !e.scc(len(e.peers)) {
-			time.Sleep(1000)
+			time.Sleep(SLEEP)
 		}
 		// for server := 0; server < len(e.peers); server++ {
 
@@ -38,13 +38,20 @@ func (e *EPaxos) execDFs(replica int, curr int, disc [][]int, low [][]int, stack
 			e.lock.Unlock()
 			//	fmt.Printf("waiting for %v status %v", instance, e.status[instance.Replica][instance.Index])
 			//ADJUST
-			time.Sleep(1000)
+			time.Sleep(SLEEP)
 			e.lock.Lock()
 		}
-
+		for instance.Index >= len(disc[instance.Replica]) {
+			disc[instance.Replica] = append(disc[instance.Replica], -1)
+			inStack[instance.Replica] = append(inStack[instance.Replica], false)
+			parents[instance.Replica] = append(parents[instance.Replica], Instance{})
+			low[instance.Replica] = append(low[instance.Replica], -1)
+			sccs[instance.Replica] = append(sccs[instance.Replica], -1)
+		}
 		if e.log[instance.Replica][instance.Index].Status == EXECUTED {
 			continue
 		}
+
 		// if(!visited[edge.first]){
 		if disc[instance.Replica][instance.Index] == -1 {
 			parents[instance.Replica][instance.Index] = e.log[instance.Replica][instance.Index]
@@ -127,12 +134,19 @@ func (e *EPaxos) scc(n int) bool {
 				e.lastApplied[R] += 1
 				continue
 			}
+			for i >= len(disc[R]) {
+				disc[R] = append(disc[R], -1)
+				inStack[R] = append(inStack[R], false)
+				parents[R] = append(parents[R], Instance{})
+				low[R] = append(low[R], -1)
+				sccs[R] = append(sccs[R], -1)
+			}
 			if disc[R][i] == -1 {
 				for e.log[R][i].Status < COMMITTED {
 					e.lock.Unlock()
 					//	fmt.Printf("waiting for %v status %v", instance, e.status[instance.Replica][instance.Index])
 					//ADJUST
-					time.Sleep(1000)
+					time.Sleep(SLEEP)
 					e.lock.Lock()
 				}
 
