@@ -10,6 +10,6 @@ rm -rf 2024*
     TestFailAgree3B \
     TestFailNoAgree3B \
     TestConcurrentStart3B \
-    # TestRejoin3B \
-    # TestBackup3B \
+    TestRejoin3B \
+    TestBackup3B \
     TestCount3B \
