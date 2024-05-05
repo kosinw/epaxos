@@ -36,6 +36,18 @@ type Ballot struct {
 }
 
 // Pre-Accept RPC arguments structure
+type PrepareArgs struct {
+	Position  LogIndex // position
+	NewBallot Ballot   //includes the new replica that sends this prepare
+}
+
+// Pre-Accept RPC reply structure
+type PrepareReply struct {
+	Reply           bool //ACK or NACK
+	CurrentInstance Instance
+}
+
+// Pre-Accept RPC arguments structure
 type PreAcceptArgs struct {
 	Command interface{}      // command
 	Deps    map[LogIndex]int // list of all instances that contain commands that interfere with this command
