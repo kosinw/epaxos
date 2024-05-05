@@ -35,7 +35,8 @@ type Instance struct {
 type Status int
 
 const (
-	PREACCEPTED Status = iota
+	INVALID Status = iota
+	PREACCEPTED
 	ACCEPTED
 	COMMITTED
 	EXECUTED
@@ -43,6 +44,8 @@ const (
 
 func (s Status) String() string {
 	switch s {
+	case INVALID:
+		return "invalid"
 	case PREACCEPTED:
 		return "pre-accepted"
 	case ACCEPTED:

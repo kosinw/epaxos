@@ -5,7 +5,9 @@ import (
 	"sort"
 	"time"
 )
-const SLEEP=100 * time.Millisecond
+
+const SLEEP = 1 * time.Millisecond
+
 func (e *EPaxos) execute() {
 	for !e.killed() {
 		if !e.scc(len(e.peers)) {
@@ -35,8 +37,8 @@ func (e *EPaxos) execDFs(replica int, curr int, disc [][]int, low [][]int, stack
 	for instance := range e.log[replica][curr].Deps {
 		//We wait if the dependency is not committed yet
 		for len(e.log[instance.Replica]) <= instance.Index || e.log[instance.Replica][instance.Index].Status < COMMITTED {
+			// e.debug(topic("DEBUG"), "waiting for %v status %v", instance, e.log[instance.Replica][instance.Index].Status)
 			e.lock.Unlock()
-			//	fmt.Printf("waiting for %v status %v", instance, e.status[instance.Replica][instance.Index])
 			//ADJUST
 			time.Sleep(SLEEP)
 			e.lock.Lock()
@@ -129,6 +131,7 @@ func (e *EPaxos) scc(n int) bool {
 	}
 	executed := false
 	for R := 0; R < n; R++ {
+		// e.debug(topicInfo, "Last applied: %v", e.lastApplied[R])
 		for i := e.lastApplied[R] + 1; i < len(e.log[R]); i++ {
 			if e.log[R][i].Status == EXECUTED {
 				e.lastApplied[R] += 1
@@ -143,6 +146,7 @@ func (e *EPaxos) scc(n int) bool {
 			}
 			if disc[R][i] == -1 {
 				for e.log[R][i].Status < COMMITTED {
+					// e.debug(topicInfo, "waiting for %v status %v", LogIndex{R, i}, e.log[R][i].Status)
 					e.lock.Unlock()
 					//	fmt.Printf("waiting for %v status %v", instance, e.status[instance.Replica][instance.Index])
 					//ADJUST
