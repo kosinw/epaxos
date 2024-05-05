@@ -129,7 +129,7 @@ func TestLeaderFailure3B(t *testing.T) {
 		t.Fatalf("expected instance %v.1, instead got %v", leader+1, index)
 	}
 
-	time.Sleep(2000 * time.Second)
+	time.Sleep(2000 * time.Millisecond)
 
 	// Check that the command did not execute.
 	n, _ := cfg.nExecuted(LogIndex{Replica: leader + 1, Index: 1})
