@@ -13,3 +13,4 @@ rm -rf 2024*
     TestRejoin3B \
     TestBackup3B \
     TestCount3B \
+    TestEP2 \
