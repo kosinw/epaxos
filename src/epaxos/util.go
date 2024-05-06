@@ -12,36 +12,25 @@ import (
 type topic string
 
 const (
-	topicClient  topic = "CLIENT"
-	topicCommit  topic = "COMMIT"
-	topicExecute topic = "EXECUTE"
-	topicError   topic = "ERROR"
-	topicInfo    topic = "INFO"
-	topicLog     topic = "LOG"
-	topicPersist topic = "PERSIST"
-	topicTimer   topic = "TIMER"
-	topicWarn    topic = "WARN"
-	topicLock    topic = "LOCK"
-	topicStart   topic = "START"
-	topicRpc     topic = "RPC"
+	topicClient    topic = "CLIENT"
+	topicCommit    topic = "COMMIT"
+	topicExecute   topic = "EXECUTE"
+	topicError     topic = "ERROR"
+	topicInfo      topic = "INFO"
+	topicLog       topic = "LOG"
+	topicPersist   topic = "PERSIST"
+	topicTimer     topic = "TIMER"
+	topicWarn      topic = "WARN"
+	topicLock      topic = "LOCK"
+	topicStart     topic = "START"
+	topicRpc       topic = "RPC"
+	topicPreAccept topic = "PACCEPT"
+	topicAccept    topic = "ACCEPT"
+	topicPrepare   topic = "PREPARE"
 )
 
 var debugStart time.Time
 var debugEnabled int32
-
-func min(a, b int) int {
-	if a < b {
-		return a
-	}
-	return b
-}
-
-func max(a, b int) int {
-	if a > b {
-		return a
-	}
-	return b
-}
 
 func checkDebugMode() bool {
 	v := os.Getenv("VERBOSE")
@@ -53,7 +42,7 @@ func checkDebugMode() bool {
 			panic("invalid verbosity")
 		}
 
-		return level == 1 // verbosity level 1 is for debugging raft
+		return level == 1 // verbosity level 1 is for debugging epaxos
 	}
 
 	return false
@@ -70,10 +59,11 @@ func init() {
 
 	log.SetFlags(log.Flags() &^ (log.LstdFlags))
 	log.SetOutput(os.Stdout)
+
+	enableLogging()
 }
 
 func disableLogging() {
-	// debugEnabled.Store(false)
 	atomic.StoreInt32(&debugEnabled, 0)
 }
 

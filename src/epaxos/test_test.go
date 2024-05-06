@@ -10,14 +10,13 @@ package epaxos
 import "testing"
 import "time"
 import "sync"
-import "math/rand"
 
 // import "fmt"
 // import "sync/atomic"
 // import "sync"
 
 func interferes1(cmd1, cmd2 interface{}) bool {
-	return cmd1 == cmd2
+	return true
 }
 
 // check to see if we can successfully replicate
@@ -98,7 +97,7 @@ func TestRPCBytes3B(t *testing.T) {
 	cfg.end()
 }
 
-func TestReplicaFailure3B(t *testing.T) {
+func TestLeaderFailure3B(t *testing.T) {
 	const (
 		servers = 3
 		leader  = 0
@@ -320,14 +319,14 @@ func TestBackup3B(t *testing.T) {
 
 	cfg.begin("Test (3B): replica backs up quickly")
 
-	cfg.one(leader1, rand.Int(), servers, true)
+	cfg.one(leader1, 101, servers, true)
 
 	cfg.disconnect((leader1 + 2) % servers)
 	cfg.disconnect((leader1 + 3) % servers)
 	cfg.disconnect((leader1 + 4) % servers)
 
 	for i := 0; i < 50; i++ {
-		cfg.peers[leader1].Start(rand.Int())
+		cfg.peers[leader1].Start(102 + i)
 	}
 
 	time.Sleep(500 * time.Millisecond)
@@ -340,7 +339,7 @@ func TestBackup3B(t *testing.T) {
 	cfg.connect((leader1 + 4) % servers)
 
 	for i := 0; i < 50; i++ {
-		cfg.one(leader2, rand.Int(), 3, true)
+		cfg.one(leader2, 102+50+i, 3, true)
 	}
 
 	other := (leader1 + 2) % servers
@@ -350,7 +349,7 @@ func TestBackup3B(t *testing.T) {
 	cfg.disconnect(other)
 
 	for i := 0; i < 50; i++ {
-		cfg.peers[leader2].Start(rand.Int())
+		cfg.peers[leader2].Start(102 + 50 + 50 + i)
 	}
 
 	time.Sleep(500 * time.Millisecond)
@@ -364,14 +363,14 @@ func TestBackup3B(t *testing.T) {
 	cfg.connect(other)
 
 	for i := 0; i < 50; i++ {
-		cfg.one(leader1, rand.Int(), 3, true)
+		cfg.one(leader1, 102+50+50+50+i, 3, true)
 	}
 
 	for i := 0; i < servers; i++ {
 		cfg.connect(i)
 	}
 
-	cfg.one(leader1, rand.Int(), servers, true)
+	cfg.one(leader1, 999, servers, true)
 
 	cfg.end()
 }

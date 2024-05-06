@@ -6,10 +6,13 @@ import (
 	"time"
 )
 
+const SLEEP = 10 * time.Millisecond
+
 func (e *EPaxos) execute() {
 	for !e.killed() {
 		if !e.scc(len(e.peers)) {
-			time.Sleep(1000)
+			time.Sleep(SLEEP)
+			e.debug(topicExecute, "waiting to execute")
 		}
 		// for server := 0; server < len(e.peers); server++ {
 
@@ -32,19 +35,27 @@ func (e *EPaxos) execDFs(replica int, curr int, disc [][]int, low [][]int, stack
 	*Time = *Time + 1
 	*stack = append(*stack, LogIndex{replica, curr})
 	inStack[replica][curr] = true
-	for instance, _ := range e.log[replica][curr].Deps {
+	for instance := range e.log[replica][curr].Deps {
 		//We wait if the dependency is not committed yet
+		//	e.debug(topicExecute, "waiting for %v status %v", instance, e.log[instance.Replica][instance.Index].Status)
 		for len(e.log[instance.Replica]) <= instance.Index || e.log[instance.Replica][instance.Index].Status < COMMITTED {
+			//	e.debug(topic("DEBUG"), "waiting for %v status %v", instance, e.log[instance.Replica][instance.Index].Status)
 			e.lock.Unlock()
-			//	fmt.Printf("waiting for %v status %v", instance, e.status[instance.Replica][instance.Index])
 			//ADJUST
-			time.Sleep(1000)
+			time.Sleep(SLEEP)
 			e.lock.Lock()
 		}
-
+		for instance.Index >= len(disc[instance.Replica]) {
+			disc[instance.Replica] = append(disc[instance.Replica], -1)
+			inStack[instance.Replica] = append(inStack[instance.Replica], false)
+			parents[instance.Replica] = append(parents[instance.Replica], Instance{})
+			low[instance.Replica] = append(low[instance.Replica], -1)
+			sccs[instance.Replica] = append(sccs[instance.Replica], -1)
+		}
 		if e.log[instance.Replica][instance.Index].Status == EXECUTED {
 			continue
 		}
+
 		// if(!visited[edge.first]){
 		if disc[instance.Replica][instance.Index] == -1 {
 			parents[instance.Replica][instance.Index] = e.log[instance.Replica][instance.Index]
@@ -56,6 +67,7 @@ func (e *EPaxos) execDFs(replica int, curr int, disc [][]int, low [][]int, stack
 	}
 	//if curr is head of its own subtree it is end of connected component
 	if disc[replica][curr] == low[replica][curr] {
+		e.debug(topicExecute, "head %v index %v: \n", replica, curr)
 		//	fmt.Printf("head %v index %v: \n", replica, curr)
 		sorted := make([]Instance, 0)
 		c := (*stack)[len(*stack)-1]
@@ -83,10 +95,13 @@ func (e *EPaxos) execDFs(replica int, curr int, disc [][]int, low [][]int, stack
 				break
 			}
 			//	fmt.Printf("Executing %v.%v \n", instance.Position.Replica, instance.Position.Index)
-			e.log[instance.Position.Replica][instance.Position.Index].Status = EXECUTED
+			e.debug(topicExecute, "about to execute %v.%v: %v", instance.Position.Replica, instance.Position.Index, instance)
 			e.lock.Unlock()
-			e.applyCh <- e.log[instance.Position.Replica][instance.Position.Index]
+			e.applyCh <- instance
+			//	e.debug(topicExecute, "Executing instance %v", instance.Position)
 			e.lock.Lock()
+
+			e.log[instance.Position.Replica][instance.Position.Index].Status = EXECUTED
 
 			executed = true
 		}
@@ -122,12 +137,28 @@ func (e *EPaxos) scc(n int) bool {
 	}
 	executed := false
 	for R := 0; R < n; R++ {
+		e.debug(topicInfo, "%v Last applied: %v", len(e.log[R]), e.lastApplied[R])
 		for i := e.lastApplied[R] + 1; i < len(e.log[R]); i++ {
 			if e.log[R][i].Status == EXECUTED {
 				e.lastApplied[R] += 1
 				continue
 			}
+			for i >= len(disc[R]) {
+				disc[R] = append(disc[R], -1)
+				inStack[R] = append(inStack[R], false)
+				parents[R] = append(parents[R], Instance{})
+				low[R] = append(low[R], -1)
+				sccs[R] = append(sccs[R], -1)
+			}
 			if disc[R][i] == -1 {
+				for e.log[R][i].Status < COMMITTED {
+					//	e.debug(topicInfo, "waiting for %v status %v", LogIndex{R, i}, e.log[R][i].Status)
+					e.lock.Unlock()
+					//	fmt.Printf("waiting for %v status %v", instance, e.status[instance.Replica][instance.Index])
+					//ADJUST
+					time.Sleep(SLEEP)
+					e.lock.Lock()
+				}
 
 				executed = e.execDFs(R, i, disc, low, &stack, inStack, parents, &Time, sccs, &counter) || executed
 			}

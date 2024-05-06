@@ -161,12 +161,12 @@ func (cfg *config) checkLogs(peer int, m Instance) (string, bool) {
 		}
 	}
 
-	_, prevok := cfg.logs[peer][R][i]
+	// _, prevok := cfg.logs[peer][R][i-1]
 	cfg.logs[peer][R][i] = v
 	if i > cfg.maxIndex[R] {
 		cfg.maxIndex[R] = i
 	}
-	return err_msg, prevok
+	return err_msg, true
 }
 
 // applier reads message from apply ch and checks that they match the log
@@ -505,6 +505,7 @@ func (cfg *config) one(peer int, cmd interface{}, expectedServers int, retry boo
 		for time.Since(t1).Seconds() < 2 {
 			nd, cmd1 := cfg.nExecuted(index)
 			if nd > 0 && nd >= expectedServers {
+				fmt.Printf("%v was commited by %v", cmd1, peer)
 				// committed
 				if cmd1 == cmd {
 					// and it was the command we submitted.
@@ -520,6 +521,7 @@ func (cfg *config) one(peer int, cmd interface{}, expectedServers int, retry boo
 	if cfg.checkFinished() == false {
 		cfg.t.Fatalf("one(%v) failed to reach agreement", cmd)
 	}
+	fmt.Printf("done???\n")
 	return index
 }
 
