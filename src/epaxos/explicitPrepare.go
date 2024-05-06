@@ -9,20 +9,24 @@ func (e *EPaxos) ExplicitPreparer() {
 	for !e.killed() {
 		i := 0
 		for {
+			//we restart if reached the largest index i
+			passes := false //flag if all logs are less length than i
 			e.lock.Lock()
 			for replica := 0; replica < len(e.peers); replica++ {
-
 				if replica == e.me {
 					continue
 				}
+				//	if replica == 0 {
+				//		e.debug(topicPrepare, " acknow %v len: %v", i, len(e.log[replica]))
+				//	}
 				if i >= len(e.log[replica]) {
 					continue
 				}
-				if e.log[replica][i].Status < COMMITTED && time.Since(e.log[replica][i].Timer) > 500*time.Millisecond && !(e.log[replica][i].Preparing) {
+				passes = true
+				if e.log[replica][i].Status < COMMITTED && e.log[replica][i].Timer != (time.Time{}) && time.Since(e.log[replica][i].Timer) > 500*time.Millisecond {
 					e.debug(topicPrepare, "time %v now %v %v preparing %v replica %v\n", e.log[replica][i].Timer, time.Now(), e.me, e.log[replica][i].Position, replica)
 					//fmt.Printf("%v preparing %v replica %v\n", e.me, e.log[replica][i].Position, replica)
-					e.log[replica][i].Timer = time.Now()
-					e.log[replica][i].Preparing = true
+					e.log[replica][i].Timer = time.Time{}
 					position := e.log[replica][i].Position
 					e.lock.Unlock()
 					go e.explicitPrepare(position)
@@ -30,6 +34,11 @@ func (e *EPaxos) ExplicitPreparer() {
 				}
 			}
 			e.lock.Unlock()
+			if !passes {
+				time.Sleep(10 * time.Millisecond)
+				break
+			}
+			i++
 		}
 	}
 }

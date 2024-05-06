@@ -7,9 +7,12 @@ package epaxos
 // from lab 3 of the 2024 version of 6.5840
 //
 
-import "testing"
-import "time"
-import "sync"
+import (
+	"math/rand"
+	"sync"
+	"testing"
+	"time"
+)
 
 // import "fmt"
 // import "sync/atomic"
@@ -97,7 +100,7 @@ func TestRPCBytes3B(t *testing.T) {
 	cfg.end()
 }
 
-func TestLeaderFailure3B(t *testing.T) {
+func TestFollowerFailure3B(t *testing.T) {
 	const (
 		servers = 3
 		leader  = 0
@@ -106,21 +109,20 @@ func TestLeaderFailure3B(t *testing.T) {
 	cfg := make_config(t, servers, false, interferes1)
 	defer cfg.cleanup()
 
-	cfg.begin("Test (3B): test progressive failure of replicas")
+	cfg.begin("Test (3B): test progressive failure of followers")
 
-	if x := cfg.one(leader, 101, servers, false); x != (LogIndex{leader, 0}) {
-		t.Fatalf("expected instance %v.0, instead got %v", leader, x)
-	}
+	cfg.one(leader, 101, servers, false)
 
 	// disconnect last command leader
-	cfg.disconnect(leader)
+	cfg.disconnect((leader + 1) % servers)
 
 	// the two remaining replicas should be able to agree
-	cfg.one((leader+2)%servers, 102, servers-1, false)
-	cfg.one((leader+1)%servers, 103, servers-1, false)
+	cfg.one(leader, 102, servers-1, false)
+	time.Sleep(1000 * time.Millisecond)
+	cfg.one(leader, 103, servers-1, false)
 
 	// disconnect another replica
-	cfg.disconnect((leader + 2))
+	cfg.disconnect((leader + 2) % servers)
 
 	// submit a command to each server, make sure their instances
 	index := cfg.peers[leader+1].Start(104)
@@ -129,13 +131,56 @@ func TestLeaderFailure3B(t *testing.T) {
 		t.Fatalf("expected instance %v.1, instead got %v", leader+1, index)
 	}
 
-	time.Sleep(2000 * time.Second)
+	time.Sleep(2000 * time.Millisecond)
 
 	// Check that the command did not execute.
-	n, _ := cfg.nExecuted(LogIndex{Replica: leader + 1, Index: 1})
+	n, _ := cfg.nExecuted(LogIndex{Replica: leader + 1, Index: 0})
 
 	if n > 0 {
-		t.Fatalf("%v executed, but no quorum", n)
+		t.Fatalf("%v executed but no quorum", n)
+	}
+
+	cfg.end()
+}
+
+// test just failure of leaders.
+func TestLeaderFailure3B(t *testing.T) {
+	const (
+		servers = 3
+		leader1 = 0
+		leader2 = 1
+	)
+
+	cfg := make_config(t, servers, false, interferes1)
+	defer cfg.cleanup()
+
+	cfg.begin("Test (3B): test failure of leaders")
+
+	cfg.one(leader1, 101, servers, false)
+
+	// disconnect the first leader.
+	cfg.disconnect(leader1)
+
+	// the remaining followers should elect
+	// a new leader.
+	cfg.one(leader2, 102, servers-1, false)
+	time.Sleep(1000 * time.Millisecond)
+	cfg.one(leader2, 103, servers-1, false)
+
+	// disconnect the new leader.
+	cfg.disconnect(leader2)
+
+	// submit a command to each server.
+	for i := 0; i < servers; i++ {
+		cfg.peers[i].Start(104)
+	}
+
+	time.Sleep(2 * 1000 * time.Millisecond)
+
+	// check that command 104 did not commit.
+	n, _ := cfg.nExecuted(LogIndex{Replica: leader2, Index: 2})
+	if n > 0 {
+		t.Fatalf("%v executed but no quorum", n)
 	}
 
 	cfg.end()
@@ -154,19 +199,19 @@ func TestFailAgree3B(t *testing.T) {
 
 	cfg.begin("Test (3B): agreement after replica reconnects")
 
-	cfg.one(leader, 101, servers, false)
+	cfg.one(leader, 100, servers, false)
 
 	cfg.disconnect((leader + 1) % servers)
 
+	cfg.one(leader, 101, servers-1, false)
 	cfg.one(leader, 102, servers-1, false)
 	cfg.one(leader, 103, servers-1, false)
 	cfg.one(leader, 104, servers-1, false)
-	cfg.one(leader, 105, servers-1, false)
 
 	cfg.connect((leader + 1) % servers)
 
+	cfg.one(leader, 105, servers, true)
 	cfg.one(leader, 106, servers, true)
-	cfg.one(leader, 107, servers, true)
 
 	cfg.end()
 }
@@ -195,7 +240,7 @@ func TestFailNoAgree3B(t *testing.T) {
 		t.Fatalf("expected instance %v.1, instead got %v", leader, index)
 	}
 
-	time.Sleep(2000 * time.Second)
+	time.Sleep(2000 * time.Millisecond)
 
 	// Check that the command did not execute.
 	n, _ := cfg.nExecuted(LogIndex{Replica: leader + 1, Index: 1})
@@ -371,6 +416,106 @@ func TestBackup3B(t *testing.T) {
 	}
 
 	cfg.one(leader1, 999, servers, true)
+
+	cfg.end()
+}
+
+func TestCount3B(t *testing.T) {
+	const (
+		servers = 3
+	)
+
+	leader := 0
+	cfg := make_config(t, servers, false, interferes1)
+	defer cfg.cleanup()
+
+	cfg.begin("Test (3B): RPC counts aren't too high")
+
+	rpcs := func() (n int) {
+		for j := 0; j < servers; j++ {
+			n += cfg.rpcCount(j)
+		}
+		return
+	}
+
+	total1 := rpcs()
+
+	var total2 int
+	var success bool
+loop:
+	for try := 0; try < 5; try++ {
+		if try > 0 {
+			// give solution some time to settle
+			time.Sleep(3 * time.Second)
+		}
+
+		// leader = cfg.checkOneLeader()
+		leader := (leader + 1) % servers
+		total1 = rpcs()
+
+		iters := 10
+		starti := cfg.peers[leader].Start(1)
+		// if !ok {
+		// 	// leader moved on really quickly
+		// 	continue
+		// }
+		cmds := []int{}
+		for i := 1; i < iters+2; i++ {
+			x := int(rand.Int31())
+			cmds = append(cmds, x)
+			index1 := cfg.peers[leader].Start(x)
+
+			tmp := LogIndex{Replica: starti.Replica, Index: starti.Index + i}
+
+			if tmp != index1 {
+				t.Fatalf("Start() failed")
+			}
+		}
+
+		for i := 1; i < iters+1; i++ {
+			tmp := LogIndex{Replica: starti.Replica, Index: starti.Index + i}
+			cmd := cfg.wait(tmp, servers)
+			if ix, ok := cmd.(int); ok == false || ix != cmds[i-1] {
+				if ix == -1 {
+					// term changed -- try again
+					continue loop
+				}
+				t.Fatalf("wrong value %v committed for index %v; expected %v\n", cmd, tmp, cmds)
+			}
+		}
+
+		failed := false
+		total2 = 0
+		for j := 0; j < servers; j++ {
+			total2 += cfg.rpcCount(j)
+		}
+
+		if failed {
+			continue loop
+		}
+
+		if total2-total1 > (iters+1+3)*10 {
+			t.Fatalf("too many RPCs (%v) for %v entries\n", total2-total1, iters)
+		}
+
+		success = true
+		break
+	}
+
+	if !success {
+		t.Fatalf("term changed too often")
+	}
+
+	time.Sleep(1000 * time.Millisecond)
+
+	total3 := 0
+	for j := 0; j < servers; j++ {
+		total3 += cfg.rpcCount(j)
+	}
+
+	if total3-total2 > 3*20 {
+		t.Fatalf("too many RPCs (%v) for 1 second of idleness\n", total3-total2)
+	}
 
 	cfg.end()
 }

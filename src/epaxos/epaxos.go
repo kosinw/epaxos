@@ -13,10 +13,12 @@ package epaxos
 //   should send an Instance to the service (or tester) in the same server.
 
 import (
+	"bytes"
 	"sync"
 	"sync/atomic"
 	"time"
 
+	"6.5840/labgob"
 	"6.5840/labrpc"
 )
 
@@ -107,6 +109,9 @@ func (e *EPaxos) attributes(cmd interface{}, ix LogIndex) (seq int, deps map[Log
 
 	// loop through all instances in replica L's 2D log
 	for r, replica := range e.log {
+		if r == ix.Replica {
+			continue
+		}
 
 		for i := len(replica) - 1; i >= 0; i-- { // loop through each replica backwards
 			instance := replica[i]
@@ -170,7 +175,8 @@ func (e *EPaxos) preAcceptPhase(cmd interface{}, ix LogIndex, nofast bool) (comm
 
 	// put cmd into our log
 	instance := e.getInstance(ix)
-
+	//from explicit prepare
+	prevBallot := instance.Ballot
 	*instance = Instance{
 		Deps:     deps,
 		Seq:      seq,
@@ -181,6 +187,10 @@ func (e *EPaxos) preAcceptPhase(cmd interface{}, ix LogIndex, nofast bool) (comm
 		Valid:    true,
 		Timer:    time.Time{},
 	}
+	if nofast {
+		instance.Ballot = prevBallot
+	}
+	e.persist()
 
 	instanceCopy := *instance
 
@@ -202,6 +212,7 @@ func (e *EPaxos) preAcceptPhase(cmd interface{}, ix LogIndex, nofast bool) (comm
 		instance := e.getInstance(ix)
 		instance.Deps = updatedDeps
 		instance.Seq = updatedSeq
+		e.persist()
 		e.debug(topicLog, "Updated %v: %v", ix, *instance)
 	}
 
@@ -237,6 +248,7 @@ func (e *EPaxos) acceptPhase(pos LogIndex) (abort bool) {
 
 	instance.Status = ACCEPTED
 	instance.Timer = time.Time{}
+	e.persist()
 	instanceCopy := *instance
 
 	e.debug(topicLog, "Updated %v: %v", pos, *instance)
@@ -265,6 +277,7 @@ func (e *EPaxos) commitPhase(pos LogIndex) {
 
 	instance.Status = COMMITTED
 	instance.Timer = time.Time{}
+	e.persist()
 	instanceCopy := *instance
 
 	e.debug(topicCommit, "Updated %v: %v", pos, *instance)
@@ -367,8 +380,7 @@ func (e *EPaxos) broadcastPreAccept(instance Instance, nofast bool) (seq int, de
 		}
 
 		// Fast path quorum
-		// TODO(kosinw): This is the right number you are not checking
-		if !nofast && replyCount >= quorum && instance.Seq == unionSeq && mapsEqual(instance.Deps, unionDeps) {
+		if replyCount >= quorum && instance.Seq == unionSeq && mapsEqual(instance.Deps, unionDeps) {
 			e.debug(topicPreAccept, "Received succesful fast path quorum for instance %v...", instance.Position)
 			abort = false
 			break
@@ -389,6 +401,8 @@ func (e *EPaxos) broadcastPreAccept(instance Instance, nofast bool) (seq int, de
 func (e *EPaxos) PreAccept(args *PreAcceptArgs, reply *PreAcceptReply) {
 	e.Lock()
 	defer e.Unlock()
+
+	defer e.persist()
 
 	e.debug(topicPreAccept, "Receiving PreAccept from %v for %v", replicaName(args.Ballot.ReplicaNum), args.Position)
 	defer e.debug(topicPreAccept, "Finished PreAccept from %v for %v", replicaName(args.Ballot.ReplicaNum), args.Position)
@@ -519,6 +533,8 @@ func (e *EPaxos) Accept(args *AcceptArgs, reply *AcceptReply) {
 	e.Lock()
 	defer e.Unlock()
 
+	defer e.persist()
+
 	e.debug(topicRpc, "Receiving Accept from %v for %v", replicaName(args.Ballot.ReplicaNum), args.Position)
 	defer e.debug(topicRpc, "Finished Accept from %v for %v", replicaName(args.Ballot.ReplicaNum), args.Position)
 
@@ -592,18 +608,18 @@ func (e *EPaxos) broadcastCommit(instance Instance) (abort bool) {
 
 			for !e.sendCommit(peer, &args, &reply) {
 				reply = CommitReply{}
-
-				lk.L.Lock()
-				defer lk.L.Unlock()
-
-				replyCount++
-
-				if !reply.Success {
-					rejectCount++
-				}
-
-				lk.Broadcast()
 			}
+
+			lk.L.Lock()
+			defer lk.L.Unlock()
+
+			replyCount++
+
+			if !reply.Success {
+				rejectCount++
+			}
+
+			lk.Broadcast()
 
 		}(i)
 	}
@@ -633,6 +649,8 @@ func (e *EPaxos) broadcastCommit(instance Instance) (abort bool) {
 func (e *EPaxos) Commit(args *CommitArgs, reply *CommitReply) {
 	e.Lock()
 	defer e.Unlock()
+
+	defer e.persist()
 
 	e.debug(topicCommit, "Receiving Commit from %v for %v", replicaName(args.Ballot.ReplicaNum), args.Position)
 	defer e.debug(topicCommit, "Finished Commit from %v for %v", replicaName(args.Ballot.ReplicaNum), args.Position)
@@ -734,6 +752,72 @@ func (e *EPaxos) killed() bool {
 	return z == 1
 }
 
+// save EPaxos's persistent state to stable storage,
+// where it can later be retrieved after a crash and restart.
+func (e *EPaxos) persist() {
+	w := new(bytes.Buffer)
+	en := labgob.NewEncoder(w)
+
+	if err := en.Encode(e.nextIndex); err != nil {
+		panic(err)
+	}
+
+	if err := en.Encode(e.log); err != nil {
+		panic(err)
+	}
+
+	state := w.Bytes()
+
+	e.persister.Save(state, e.persister.ReadSnapshot())
+	e.debug(topicPersist, "Write state: nextIndex=%v, log=%v", e.nextIndex, e.log)
+}
+
+// restore previously persisted state.
+func (e *EPaxos) readPersist() {
+	state := e.persister.ReadEPaxosState()
+
+	if state == nil || len(state) < 1 {
+		return
+	}
+
+	r := bytes.NewBuffer(state)
+	d := labgob.NewDecoder(r)
+
+	var nextIndex int
+	var log PaxosLog
+
+	if err := d.Decode(&nextIndex); err != nil {
+		panic(err)
+	}
+
+	if err := d.Decode(&log); err != nil {
+		panic(err)
+	}
+
+	e.nextIndex = nextIndex
+	e.log = log
+
+	e.debug(topicPersist, "Read state: nextIndex=%v, log=%v", e.nextIndex, e.log)
+}
+
+func (e *EPaxos) primeLog() {
+	for R := range e.log {
+		for i := range e.log[R] {
+			if !e.log[R][i].Valid {
+				continue
+			}
+
+			if e.log[R][i].Status == EXECUTED {
+				e.log[R][i].Status = COMMITTED
+			}
+
+			if e.log[R][i].Status != COMMITTED {
+				e.log[R][i].Timer = time.Now()
+			}
+		}
+	}
+}
+
 // the service or tester wants to create a Raft server. the ports
 // of all the Raft servers (including this one) are in peers[]. this
 // server's port is peers[me]. all the servers' peers[] arrays
@@ -765,8 +849,12 @@ func Make(peers []*labrpc.ClientEnd, me int, persister *Persister, applyCh chan 
 		e.lastApplied[i] = -1
 	}
 
-	go e.execute()
-	go e.ExplicitPreparer()
+	// initialize from state persisted before a crash
+	e.readPersist()
+
+	// set all executed operations to committed
+	e.primeLog()
+
 	// print out what state we are starting at
 	e.debug(
 		topicStart,
@@ -774,5 +862,8 @@ func Make(peers []*labrpc.ClientEnd, me int, persister *Persister, applyCh chan 
 		e.nextIndex,
 	)
 
+	// start long running goroutine for execution
+	go e.execute()
+	go e.ExplicitPreparer()
 	return e
 }
