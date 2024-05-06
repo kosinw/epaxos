@@ -10,6 +10,7 @@ package epaxos
 import (
 	"math/rand"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 )
@@ -519,3 +520,433 @@ loop:
 
 	cfg.end()
 }
+
+func TestPersist13C(t *testing.T) {
+	const (
+		servers = 3
+		leader1 = 0
+		leader2 = 1
+	)
+	cfg := make_config(t, servers, false, interferes1)
+	defer cfg.cleanup()
+
+	cfg.begin("Test (3C): basic persistence")
+
+	cfg.one(leader1, 11, servers, true)
+
+	// crash and re-start all
+	for i := 0; i < servers; i++ {
+		cfg.start1(i, cfg.applier)
+	}
+	for i := 0; i < servers; i++ {
+		cfg.disconnect(i)
+		cfg.connect(i)
+	}
+
+	cfg.one(leader1, 12, servers, true)
+
+	cfg.disconnect(leader1)
+	cfg.start1(leader1, cfg.applier)
+	cfg.connect(leader1)
+
+	cfg.one(leader1, 13, servers, true)
+
+	cfg.disconnect(leader2)
+	// leader2 disconnected so we send to leader1
+	cfg.one(leader1, 14, servers-1, true)
+	cfg.start1(leader2, cfg.applier)
+	cfg.connect(leader2)
+	// leader2 back
+
+	tmp := LogIndex{Replica: leader1, Index: 3} // wait for leader2 to join before killing i3
+	cfg.wait(tmp, servers)
+
+	i3 := (leader2 + 1) % servers
+	cfg.disconnect(i3)
+	cfg.one(leader2, 15, servers-1, true)
+	cfg.start1(i3, cfg.applier)
+	cfg.connect(i3)
+
+	cfg.one(leader2, 16, servers, true)
+
+	cfg.end()
+}
+
+func TestPersist23C(t *testing.T) {
+	const (
+		servers = 5
+		leader1 = 3
+		leader2 = 4
+	)
+	cfg := make_config(t, servers, false, interferes1)
+	defer cfg.cleanup()
+
+	cfg.begin("Test (3C): more persistence")
+
+	index := 1
+	for iters := 0; iters < 5; iters++ {
+		cfg.one(leader1, 10+index, servers, true)
+		index++
+
+		cfg.disconnect((leader1 + 1) % servers)
+		cfg.disconnect((leader1 + 2) % servers)
+
+		cfg.one(leader1, 10+index, servers-2, true)
+		index++
+
+		cfg.disconnect((leader1 + 0) % servers)
+		cfg.disconnect((leader1 + 3) % servers)
+		cfg.disconnect((leader1 + 4) % servers)
+
+		cfg.start1((leader1 + 1) % servers, cfg.applier)
+		cfg.start1((leader1 + 2) % servers, cfg.applier)
+		cfg.connect((leader1 + 1) % servers)
+		cfg.connect((leader1 + 2) % servers)
+
+		time.Sleep(1000 * time.Millisecond)
+
+		cfg.start1((leader1 + 3) % servers, cfg.applier)
+		cfg.connect((leader1 + 3) % servers)
+		
+		// leader1 & leader1 + 4 are disconnected at this point
+		cfg.one(leader2, 10+index, servers-2, true)
+		index++
+
+		cfg.connect((leader1 + 4) % servers)
+		cfg.connect((leader1 + 0) % servers)
+	}
+
+	cfg.one(leader1, 1000, servers, true)
+
+	cfg.end()
+}
+
+func TestPersist33C(t *testing.T) {
+	const (
+		servers = 3
+		leader = 0
+	)
+	cfg := make_config(t, servers, false, interferes1)
+	defer cfg.cleanup()
+
+	cfg.begin("Test (3C): partitioned server, server restarts")
+
+	cfg.one(leader, 101, servers, true)
+
+	cfg.disconnect((leader + 2) % servers)
+
+	cfg.one(leader, 102, servers-1, true)
+
+	cfg.crash1((leader + 0) % servers)
+	cfg.crash1((leader + 1) % servers)
+	cfg.connect((leader + 2) % servers)
+	cfg.start1((leader + 0) % servers, cfg.applier)
+	cfg.connect((leader + 0) % servers)
+
+	cfg.one(leader, 103, servers-1, true)
+
+	cfg.start1((leader + 1) % servers, cfg.applier)
+	cfg.connect((leader + 1) % servers)
+
+	cfg.one(leader, 104, servers, true)
+
+	cfg.end()
+}
+
+func TestFigure83C(t *testing.T) {
+	const (
+		servers = 5
+		leader1 = 0
+	)
+	cfg := make_config(t, servers, false, interferes1)
+	defer cfg.cleanup()
+
+	cfg.begin("Test (3C): Figure 8")
+
+	cfg.one(leader1, 101, servers, true)
+
+	nup := servers
+	for iters := 0; iters < 1000; iters++ {
+		leader := -1
+		// find a functional server to be leader
+		for i := 0; i < servers; i++ {
+			if cfg.peers[i] != nil {
+				cfg.peers[i].Start(102 + iters)
+				leader = i
+				break
+			}
+		}
+
+		cfg.peers[leader].Start(101)
+
+		if (rand.Int() % 1000) < 100 {
+			ms := rand.Int63() % 500
+			time.Sleep(time.Duration(ms) * time.Millisecond)
+		} else {
+			ms := rand.Int63() % 13
+			time.Sleep(time.Duration(ms) * time.Millisecond)
+		}
+
+		if leader != -1 {
+			cfg.crash1(leader)
+			nup -= 1
+		}
+
+		if nup < 3 {
+			s := rand.Int() % servers
+			if cfg.peers[s] == nil {
+				cfg.start1(s, cfg.applier)
+				cfg.connect(s)
+				nup += 1
+			}
+		}
+	}
+
+	for i := 0; i < servers; i++ {
+		if cfg.peers[i] == nil {
+			cfg.start1(i, cfg.applier)
+			cfg.connect(i)
+		}
+	}
+
+	cfg.one(leader1, 9999, servers, true)
+
+	cfg.end()
+}
+
+
+func TestUnreliableAgree3C(t *testing.T) {
+	const (
+		servers = 5
+		leader1 = 0
+	)
+	cfg := make_config(t, servers, true, interferes1)
+	defer cfg.cleanup()
+
+	cfg.begin("Test (3C): unreliable agreement")
+
+	var wg sync.WaitGroup
+
+	for iters := 1; iters < 50; iters++ {
+		for j := 0; j < 4; j++ {
+			wg.Add(1)
+			go func(iters, j int) {
+				defer wg.Done()
+				cfg.one(leader1, (100 * iters) + j, 1, true)
+			} (iters, j)
+		}
+		cfg.one(leader1, iters, 1, true)
+	}
+
+	cfg.setunreliable(false)
+
+	wg.Wait()
+
+	cfg.one(leader1, 100, servers, true)
+
+	cfg.end()
+}
+
+func TestFigure8Unreliable3C(t *testing.T) {
+	const (
+		servers = 5
+		leader1 = 0
+	)
+	cfg := make_config(t, servers, true, interferes1)
+	defer cfg.cleanup()
+
+	cfg.begin("Test (3C): Figure 8 (unreliable)")
+
+	cfg.one(leader1, 101, 1, true)
+
+	nup := servers
+	for iters := 0; iters < 1000; iters++ {
+		if iters == 200 {
+			cfg.setlongreordering(true)
+		}
+		leader := -1
+		for i := 0; i < servers; i++ {
+			if cfg.peers[i] != nil && cfg.connected[i] {
+				cfg.peers[i].Start(102 + i)
+				leader = i
+				break
+			}
+		}
+
+		if (rand.Int() % 1000) < 100 {
+			ms := rand.Int63() % 500
+			time.Sleep(time.Duration(ms) * time.Millisecond)
+		} else {
+			ms := (rand.Int63() % 13)
+			time.Sleep(time.Duration(ms) * time.Millisecond)
+		}
+		
+		if leader != -1 && (rand.Int() % 1000) < 500 {
+			cfg.disconnect(leader)
+			nup -= 1
+		}
+
+		if nup < 3 {
+			s := rand.Int() % servers
+			if cfg.connected[s] == false {
+				cfg.connect(s)
+				nup += 1
+			}
+		}
+	}
+
+	for i := 0; i < servers; i++ {
+		if cfg.connected[i] == false {
+			cfg.connect(i)
+		}
+	}
+
+	cfg.one(leader1, 9999, servers, true)
+
+	cfg.end()
+}
+
+func internalChurn(t *testing.T, unreliable bool) {
+	const (
+		servers = 5
+		leader1 = 0
+	)
+	cfg := make_config(t, servers, true, interferes1)
+	defer cfg.cleanup()
+
+	if unreliable {
+		cfg.begin("Test (3C): unreliable churn")
+	} else {
+		cfg.begin("Test (3C): churn")
+	}
+
+	stop := int32(0)
+
+	cfn := func(me int, ch chan []int) {
+		var ret []int
+		ret = nil
+		defer func() { ch <- ret }()
+		values := []int{}
+		for atomic.LoadInt32(&stop) == 0 {
+			x := rand.Int() 
+			index := LogIndex{}
+			ok := false
+			for i := 0; i < servers; i++ {
+				cfg.mu.Lock()
+				peer := cfg.peers[i]
+				cfg.mu.Unlock()
+				if peer != nil {
+					index = peer.Start(x) // didn't know how to circumvent this randInt thing
+					ok = true
+					break
+				}
+			}
+			if ok {
+				for _, to := range []int{10, 20, 50, 100, 200} {
+					nd, cmd := cfg.nExecuted(index)
+					if nd > 0 {
+						if xx, ok := cmd.(int); ok {
+							if xx == x {
+								values = append(values, x)
+							}
+						} else {
+							cfg.t.Fatalf("wrong command type")
+						}
+						break
+					}
+					time.Sleep(time.Duration(to) * time.Millisecond)
+				}
+			} else {
+				time.Sleep(time.Duration(79+me*17) * time.Millisecond)
+			}
+		}
+		ret = values
+	}
+
+	ncli := 3
+	cha := []chan []int{}
+	for i := 0; i < ncli; i++ {
+		cha = append(cha, make(chan []int))
+		go cfn(i, cha[i])
+	}
+
+	for iters := 0; iters < 20; iters++ {
+		if (rand.Int() % 1000) < 200 {
+			i := rand.Int() % servers
+			cfg.disconnect(i)
+		}
+
+		if (rand.Int() % 1000) < 500 {
+			i := rand.Int() % servers
+			if cfg.peers[i] == nil {
+				cfg.start1(i, cfg.applier)
+			}
+			cfg.connect(i)
+		}
+
+		if (rand.Int() % 1000) < 200 {
+			i := rand.Int() % servers
+			if cfg.peers[i] != nil {
+				cfg.crash1(i)
+			}
+		}
+
+		time.Sleep(700 * time.Millisecond)
+	}
+
+	time.Sleep(1000 * time.Millisecond)
+	cfg.setunreliable(false)
+	for i := 0; i < servers; i++ {
+		if cfg.peers[i] == nil {
+			cfg.start1(i, cfg.applier)
+		}
+		cfg.connect(i)
+	}
+
+	atomic.StoreInt32(&stop, 1)
+
+	values := []int{}
+	for i := 0; i < ncli; i++ {
+		vv := <-cha[i]
+		if vv == nil {
+			t.Fatal("client failed")
+		}
+		values = append(values, vv...)
+	}
+
+	time.Sleep(1000 * time.Millisecond)
+
+	lastIndex := cfg.one(leader1, 100, servers, true)
+	really := make([]int, lastIndex.Index + 1)
+	for index := 1; index <= lastIndex.Index; index++ {
+		v := cfg.wait(LogIndex{Replica: lastIndex.Replica, Index: index}, servers)
+		if vi, ok := v.(int); ok {
+			really = append(really, vi)
+		} else {
+			t.Fatalf("not an int")
+		}
+	}
+
+	for _, v1 := range values {
+		ok := false
+		for _, v2 := range really {
+			if v1 == v2 {
+				ok = true
+			}
+		}
+		if ok == false {
+			cfg.t.Fatalf("didn't find a value")
+		}
+	}
+
+	cfg.end()
+}
+
+func TestReliableChurn3C(t *testing.T) {
+	internalChurn(t, false)
+}
+
+func TestUnreliableChurn3C(t *testing.T) {
+	internalChurn(t, true)
+}
+

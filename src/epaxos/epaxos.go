@@ -344,6 +344,7 @@ func (e *EPaxos) broadcastPreAccept(instance Instance, nofast bool) (seq int, de
 
 			for !e.sendPreAccept(peer, &args, &reply) {
 				reply = PreAcceptReply{}
+				time.Sleep(10 * time.Millisecond)
 			}
 
 			lk.L.Lock()
