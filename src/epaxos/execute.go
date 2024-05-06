@@ -12,7 +12,7 @@ func (e *EPaxos) execute() {
 	for !e.killed() {
 		if !e.scc(len(e.peers)) {
 			time.Sleep(SLEEP)
-			e.debug(topicExecute, "waiting to execute")
+			//	e.debug(topicExecute, "waiting to execute")
 		}
 		// for server := 0; server < len(e.peers); server++ {
 
@@ -37,7 +37,7 @@ func (e *EPaxos) execDFs(replica int, curr int, disc [][]int, low [][]int, stack
 	inStack[replica][curr] = true
 	for instance := range e.log[replica][curr].Deps {
 		//We wait if the dependency is not committed yet
-		//	e.debug(topicExecute, "waiting for %v status %v", instance, e.log[instance.Replica][instance.Index].Status)
+		e.debug(topicExecute, "waiting for %v", instance)
 		for len(e.log[instance.Replica]) <= instance.Index || e.log[instance.Replica][instance.Index].Status < COMMITTED {
 			//	e.debug(topic("DEBUG"), "waiting for %v status %v", instance, e.log[instance.Replica][instance.Index].Status)
 			e.lock.Unlock()
@@ -137,7 +137,7 @@ func (e *EPaxos) scc(n int) bool {
 	}
 	executed := false
 	for R := 0; R < n; R++ {
-		e.debug(topicInfo, "%v Last applied: %v", len(e.log[R]), e.lastApplied[R])
+		//e.debug(topicInfo, "%v Last applied: %v", len(e.log[R]), e.lastApplied[R])
 		for i := e.lastApplied[R] + 1; i < len(e.log[R]); i++ {
 			if e.log[R][i].Status == EXECUTED {
 				e.lastApplied[R] += 1
@@ -151,15 +151,16 @@ func (e *EPaxos) scc(n int) bool {
 				sccs[R] = append(sccs[R], -1)
 			}
 			if disc[R][i] == -1 {
+				e.debug(topicInfo, "waiting for %v status %v", LogIndex{R, i}, e.log[R][i].Status)
 				for e.log[R][i].Status < COMMITTED {
-					//	e.debug(topicInfo, "waiting for %v status %v", LogIndex{R, i}, e.log[R][i].Status)
+
 					e.lock.Unlock()
 					//	fmt.Printf("waiting for %v status %v", instance, e.status[instance.Replica][instance.Index])
 					//ADJUST
 					time.Sleep(SLEEP)
 					e.lock.Lock()
 				}
-
+				e.debug(topicInfo, "finished waiting for %v status %v", LogIndex{R, i}, e.log[R][i].Status)
 				executed = e.execDFs(R, i, disc, low, &stack, inStack, parents, &Time, sccs, &counter) || executed
 			}
 

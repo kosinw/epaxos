@@ -141,8 +141,8 @@ func (e *EPaxos) attributes(cmd interface{}, ix LogIndex) (seq int, deps map[Log
 func (e *EPaxos) getInstance(index LogIndex) *Instance {
 	// extend this replica, then append to this replica's logs
 	for len(e.log[index.Replica]) <= index.Index {
-		e.log[index.Replica] = append(e.log[index.Replica], Instance{Valid: false, Timer: time.Now(),
-			Position: index})
+		e.log[index.Replica] = append(e.log[index.Replica], Instance{Status: INVALID, Valid: false, Timer: time.Now(),
+			Position: LogIndex{Replica: index.Replica, Index: len(e.log[index.Replica])}})
 	}
 
 	return &e.log[index.Replica][index.Index]
@@ -380,7 +380,7 @@ func (e *EPaxos) broadcastPreAccept(instance Instance, nofast bool) (seq int, de
 		}
 
 		// Fast path quorum
-		if replyCount >= quorum && instance.Seq == unionSeq && mapsEqual(instance.Deps, unionDeps) {
+		if replyCount >= quorum && instance.Seq == unionSeq && mapsEqual(instance.Deps, unionDeps) && !nofast {
 			e.debug(topicPreAccept, "Received succesful fast path quorum for instance %v...", instance.Position)
 			abort = false
 			break
@@ -688,14 +688,14 @@ func (e *EPaxos) Commit(args *CommitArgs, reply *CommitReply) {
 }
 
 func (e *EPaxos) sendCommit(server int, args *CommitArgs, reply *CommitReply) bool {
-	e.debug(topicRpc, "Calling %v.Commit...: %v", replicaName(server), args.Position)
+	e.debug(topicRpc, "Calling %v.Commit...: %v %v", replicaName(server), args.Position, args.Ballot)
 	//fmt.Printf("Calling %v.Commit...: %v\n", replicaName(server), args.Position)
 	ok := e.peers[server].Call("EPaxos.Commit", args, reply)
 
 	if ok {
 		e.debug(topicRpc, "Finishing %v.Commit...: %v", replicaName(server), reply.Success)
 	} else {
-		e.debug(topicRpc, "Dropping %v.Commit...", replicaName(server))
+		e.debug(topicRpc, "Dropping %v.Commit...: %v", replicaName(server), args.Position)
 	}
 	return ok
 }

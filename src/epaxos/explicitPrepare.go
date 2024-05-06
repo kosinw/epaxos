@@ -24,9 +24,10 @@ func (e *EPaxos) ExplicitPreparer() {
 				}
 				passes = true
 				if e.log[replica][i].Status < COMMITTED && e.log[replica][i].Timer != (time.Time{}) && time.Since(e.log[replica][i].Timer) > 500*time.Millisecond {
-					e.debug(topicPrepare, "time %v now %v %v preparing %v replica %v\n", e.log[replica][i].Timer, time.Now(), e.me, e.log[replica][i].Position, replica)
+					e.debug(topicPrepare, "%v preparing %v replica %v time %v\n", e.me, e.log[replica][i].Position, replica, e.log[replica][i].Timer)
 					//fmt.Printf("%v preparing %v replica %v\n", e.me, e.log[replica][i].Position, replica)
 					e.log[replica][i].Timer = time.Time{}
+					e.debug(topicPrepare, "%v dpreparing %v replica %v time %v\n", e.me, i, replica, e.log[replica][i].Timer)
 					position := e.log[replica][i].Position
 					e.lock.Unlock()
 					go e.explicitPrepare(position)
@@ -65,11 +66,6 @@ func (e *EPaxos) broadcastPrepare(position LogIndex, newBallot Ballot) (abort bo
 		Position:  position,
 		NewBallot: newBallot,
 	}
-	defer func() {
-		e.lock.Lock()
-		e.log[position.Replica][position.Index].Preparing = false
-		e.lock.Unlock()
-	}()
 
 	for i := 0; i < e.numPeers(); i++ {
 
@@ -131,21 +127,28 @@ func (e *EPaxos) broadcastPrepare(position LogIndex, newBallot Ballot) (abort bo
 			e.log[position.Replica][position.Index].Deps = commits[0].Deps
 			e.log[position.Replica][position.Index].Seq = commits[0].Seq
 			e.log[position.Replica][position.Index].Status = COMMITTED
+			e.log[position.Replica][position.Index].Command = commits[0].Ballot
+			e.log[position.Replica][position.Index].Valid = true
 			instance := e.log[position.Replica][position.Index]
+			e.debug(topicPrepare, "%v committing %v: commit path\n", e.me, position)
 			//fmt.Printf("%v committing %v: commit path\n", e.me, position)
 			e.lock.Unlock()
 			_ = e.broadcastCommit(instance)
 			e.debug(topicPrepare, "%v committed %v: commit path\n", e.me, position)
 		} else if len(accepts) > 0 {
 			e.lock.Lock()
-			e.log[position.Replica][position.Index].Deps = commits[0].Deps
-			e.log[position.Replica][position.Index].Seq = commits[0].Seq
-			e.log[position.Replica][position.Index].Status = COMMITTED
+			e.log[position.Replica][position.Index].Deps = accepts[0].Deps
+			e.log[position.Replica][position.Index].Seq = accepts[0].Seq
+			e.log[position.Replica][position.Index].Status = ACCEPTED
+			e.log[position.Replica][position.Index].Command = accepts[0].Ballot
+			e.log[position.Replica][position.Index].Valid = true
 			instance := e.log[position.Replica][position.Index]
 			e.lock.Unlock()
+			e.debug(topicPrepare, "%v accepting %v: commit path\n", e.me, position)
 			abort = e.broadcastAccept(instance)
 			if !abort {
 				_ = e.broadcastCommit(instance)
+				e.debug(topicPrepare, "%v committed %v: commit path\n", e.me, position)
 			}
 		} else if len(preaccepts) >= majority && !originalAccept {
 			e.lock.Lock()
