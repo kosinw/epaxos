@@ -237,7 +237,7 @@ func GenericTest(t *testing.T, part string, nclients int, nservers int, unreliab
 	}
 	title = title + " (" + part + ")" // 4A or 4B
 
-	cfg := make_config(t, nservers, unreliable, maxraftstate)
+	cfg := make_config(t, nservers, unreliable)
 	defer cfg.cleanup()
 
 	cfg.begin(title)
@@ -391,7 +391,7 @@ func GenericTest(t *testing.T, part string, nclients int, nservers int, unreliab
 func GenericTestSpeed(t *testing.T, part string, maxraftstate int) {
 	const nservers = 3
 	const numOps = 1000
-	cfg := make_config(t, nservers, false, maxraftstate)
+	cfg := make_config(t, nservers, false)
 	defer cfg.cleanup()
 
 	ck := cfg.makeClient(cfg.All())
@@ -443,7 +443,7 @@ func TestUnreliable4A(t *testing.T) {
 
 func TestUnreliableOneKey4A(t *testing.T) {
 	const nservers = 3
-	cfg := make_config(t, nservers, true, -1)
+	cfg := make_config(t, nservers, true)
 	defer cfg.cleanup()
 
 	ck := cfg.makeClient(cfg.All())
@@ -478,7 +478,7 @@ func TestUnreliableOneKey4A(t *testing.T) {
 // network ends up in the minority partition.
 func TestOnePartition4A(t *testing.T) {
 	const nservers = 5
-	cfg := make_config(t, nservers, false, -1)
+	cfg := make_config(t, nservers, false)
 	defer cfg.cleanup()
 	ck := cfg.makeClient(cfg.All())
 

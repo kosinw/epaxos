@@ -11,10 +11,10 @@ import "math/rand"
 import "encoding/base64"
 import "sync"
 import "runtime"
-import "6.5840/raft"
 import "fmt"
 import "time"
 import "sync/atomic"
+import "6.5840/epaxos"
 
 func randstring(n int) string {
 	b := make([]byte, 2*n)
@@ -47,11 +47,10 @@ type config struct {
 	net          *labrpc.Network
 	n            int
 	kvservers    []*KVServer
-	saved        []*raft.Persister
+	saved        []*epaxos.Persister
 	endnames     [][]string // names of each server's sending ClientEnds
 	clerks       map[*Clerk][]string
 	nextClientId int
-	maxraftstate int
 	start        time.Time // time at which make_config() was called
 	// begin()/end() statistics
 	t0    time.Time // time at which test_test.go called cfg.begin()
@@ -82,7 +81,7 @@ func (cfg *config) cleanup() {
 func (cfg *config) LogSize() int {
 	logsize := 0
 	for i := 0; i < cfg.n; i++ {
-		n := cfg.saved[i].RaftStateSize()
+		n := cfg.saved[i].ReadSize()
 		if n > logsize {
 			logsize = n
 		}
@@ -308,14 +307,14 @@ func (cfg *config) StartServer(i int) {
 	if cfg.saved[i] != nil {
 		cfg.saved[i] = cfg.saved[i].Copy()
 	} else {
-		cfg.saved[i] = raft.MakePersister()
+		cfg.saved[i] = epaxos.MakePersister()
 	}
 	cfg.mu.Unlock()
 
-	cfg.kvservers[i] = StartKVServer(ends, i, cfg.saved[i], cfg.maxraftstate)
+	cfg.kvservers[i] = StartKVServer(ends, i, cfg.saved[i])
 
 	kvsvc := labrpc.MakeService(cfg.kvservers[i])
-	rfsvc := labrpc.MakeService(cfg.kvservers[i].rf)
+	rfsvc := labrpc.MakeService(cfg.kvservers[i].ep)
 	srv := labrpc.MakeServer()
 	srv.AddService(kvsvc)
 	srv.AddService(rfsvc)
@@ -326,13 +325,7 @@ func (cfg *config) Leader() (bool, int) {
 	cfg.mu.Lock()
 	defer cfg.mu.Unlock()
 
-	for i := 0; i < cfg.n; i++ {
-		_, is_leader := cfg.kvservers[i].rf.GetState()
-		if is_leader {
-			return true, i
-		}
-	}
-	return false, 0
+	return true, 1
 }
 
 // Partition servers into 2 groups and put current leader in minority
@@ -357,7 +350,7 @@ func (cfg *config) make_partition() ([]int, []int) {
 
 var ncpu_once sync.Once
 
-func make_config(t *testing.T, n int, unreliable bool, maxraftstate int) *config {
+func make_config(t *testing.T, n int, unreliable bool) *config {
 	ncpu_once.Do(func() {
 		if runtime.NumCPU() < 2 {
 			fmt.Printf("warning: only one CPU, which may conceal locking bugs\n")
@@ -370,11 +363,10 @@ func make_config(t *testing.T, n int, unreliable bool, maxraftstate int) *config
 	cfg.net = labrpc.MakeNetwork()
 	cfg.n = n
 	cfg.kvservers = make([]*KVServer, cfg.n)
-	cfg.saved = make([]*raft.Persister, cfg.n)
+	cfg.saved = make([]*epaxos.Persister, cfg.n)
 	cfg.endnames = make([][]string, cfg.n)
 	cfg.clerks = make(map[*Clerk][]string)
 	cfg.nextClientId = cfg.n + 1000 // client ids start 1000 above the highest serverid
-	cfg.maxraftstate = maxraftstate
 	cfg.start = time.Now()
 
 	// create a full set of KV servers.
