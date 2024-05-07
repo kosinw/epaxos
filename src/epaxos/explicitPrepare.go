@@ -173,17 +173,17 @@ func (e *EPaxos) broadcastPrepare(position LogIndex, newBallot Ballot) (abort bo
 			} else {
 				e.lock.Unlock()
 				e.debug(topicPrepare, "%v trying to preaccept %v\n", e.me, position)
-				e.processRequest(preaccepts[0].Command, position, true)
+				// e.processRequest(preaccepts[0].Command, position, true)
 				e.debug(topicPrepare, "through preaccept%v committed %v\n", e.me, position)
 			}
 		} else if len(preaccepts) > 0 {
 			e.debug(topicPrepare, "%v trying to preaccept %v\n", e.me, position)
-			e.processRequest(preaccepts[0].Command, position, true)
+			// e.processRequest(preaccepts[0].Command, position, true)
 			e.debug(topicPrepare, "through preaccept %v committed %v\n", e.me, position)
 
 		} else {
 			e.debug(topicPrepare, "%v trying to preaccept %v: NOP\n", e.me, position)
-			e.processRequest(NOP, position, true)
+			// e.processRequest(NOP, position, true)
 			e.debug(topicPrepare, "%v committed %v: NOP\n", e.me, position)
 		}
 

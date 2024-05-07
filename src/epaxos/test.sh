@@ -11,6 +11,7 @@ rm -rf 2024*
     TestSCCChecker \
     TestEP1 \
     TestEP2 \
+    TestEPBackup \
     TestEPBack \
     TestBasicAgree3B \
     TestRPCBytes3B \
@@ -22,3 +23,11 @@ rm -rf 2024*
     TestRejoin3B \
     TestBackup3B \
     TestCount3B \
+    TestPersist13C \
+    TestPersist23C \
+    TestPersist33C \
+    TestFigure83C \
+    TestUnreliableAgree3C \
+    TestFigure8Unreliable3C \
+    TestReliableChurn3C \
+    TestUnreliableChurn3C \
