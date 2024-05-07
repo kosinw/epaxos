@@ -14,6 +14,7 @@ package epaxos
 
 import (
 	"bytes"
+	"math/rand"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -141,20 +142,22 @@ func (e *EPaxos) attributes(cmd interface{}, ix LogIndex) (seq int, deps map[Log
 func (e *EPaxos) getInstance(index LogIndex) *Instance {
 	// extend this replica, then append to this replica's logs
 	for len(e.log[index.Replica]) <= index.Index {
-		e.log[index.Replica] = append(e.log[index.Replica], Instance{Valid: false})
+		e.log[index.Replica] = append(e.log[index.Replica], Instance{Valid: false,
+			Timer:    time.Now().Add(time.Duration(rand.Intn(300)) * time.Millisecond),
+			Position: LogIndex{Replica: index.Replica, Index: len(e.log[index.Replica])}})
 	}
 
 	return &e.log[index.Replica][index.Index]
 }
 
 // preAcceptPhase executes the pre-accept phase for the EPaxos commit protocol.
-func (e *EPaxos) preAcceptPhase(cmd interface{}, ix LogIndex) (commit bool, abort bool) {
+func (e *EPaxos) preAcceptPhase(cmd interface{}, ix LogIndex, nofast bool) (commit bool, abort bool) {
 	e.Lock()
 
 	abort = false
 	commit = false
 
-	assert(ix.Replica == e.me, e.me, "Log index %v should have replica %v", ix, replicaName(e.me))
+	//assert(ix.Replica == e.me, e.me, "Log index %v should have replica %v", ix, replicaName(e.me))
 
 	e.debug(topicPreAccept, "Starting pre-accept phase for instance %v...", ix)
 
@@ -174,7 +177,7 @@ func (e *EPaxos) preAcceptPhase(cmd interface{}, ix LogIndex) (commit bool, abor
 
 	// put cmd into our log
 	instance := e.getInstance(ix)
-
+	prevBallot := instance.Ballot
 	*instance = Instance{
 		Deps:     deps,
 		Seq:      seq,
@@ -185,6 +188,9 @@ func (e *EPaxos) preAcceptPhase(cmd interface{}, ix LogIndex) (commit bool, abor
 		Valid:    true,
 		Timer:    time.Time{},
 	}
+	if nofast {
+		instance.Ballot = prevBallot
+	}
 	e.persist()
 
 	instanceCopy := *instance
@@ -192,7 +198,7 @@ func (e *EPaxos) preAcceptPhase(cmd interface{}, ix LogIndex) (commit bool, abor
 	e.Unlock()
 
 	// broadcast and wait for pre-accept messages to our other peers
-	updatedSeq, updatedDeps, abort := e.broadcastPreAccept(instanceCopy)
+	updatedSeq, updatedDeps, abort := e.broadcastPreAccept(instanceCopy, nofast)
 
 	e.Lock()
 	defer e.Unlock()
@@ -285,9 +291,9 @@ func (e *EPaxos) commitPhase(pos LogIndex) {
 	return
 }
 
-func (e *EPaxos) processRequest(cmd interface{}, ix LogIndex) {
+func (e *EPaxos) processRequest(cmd interface{}, ix LogIndex, nofast bool) {
 	// run pre-accept phase
-	commit, abort := e.preAcceptPhase(cmd, ix)
+	commit, abort := e.preAcceptPhase(cmd, ix, nofast)
 
 	if abort || e.killed() {
 		return
@@ -308,7 +314,7 @@ func (e *EPaxos) processRequest(cmd interface{}, ix LogIndex) {
 }
 
 // broadcastPreAccept sends out PreAccept messages to all nodes.
-func (e *EPaxos) broadcastPreAccept(instance Instance) (seq int, deps map[LogIndex]int, abort bool) {
+func (e *EPaxos) broadcastPreAccept(instance Instance, nofast bool) (seq int, deps map[LogIndex]int, abort bool) {
 	replyCount := 1
 	rejectCount := 0
 	unionSeq := instance.Seq
@@ -372,7 +378,7 @@ func (e *EPaxos) broadcastPreAccept(instance Instance) (seq int, deps map[LogInd
 		}
 
 		// Fast path quorum
-		if replyCount >= quorum && instance.Seq == unionSeq && mapsEqual(instance.Deps, unionDeps) {
+		if !nofast && replyCount >= quorum && instance.Seq == unionSeq && mapsEqual(instance.Deps, unionDeps) {
 			e.debug(topicPreAccept, "Received succesful fast path quorum for instance %v...", instance.Position)
 			abort = false
 			break
@@ -402,7 +408,7 @@ func (e *EPaxos) PreAccept(args *PreAcceptArgs, reply *PreAcceptReply) {
 	// First check if the ballot number is invalid for the RPC request
 	// This is done to ensure freshness of messages
 	instance := e.getInstance(args.Position)
-
+	instance.Timer = time.Now().Add(time.Duration(rand.Intn(300)) * time.Millisecond)
 	if instance.Valid && instance.Ballot.gt(args.Ballot) {
 		index := args.Position
 		b := e.log[index.Replica][index.Index].Ballot
@@ -717,7 +723,7 @@ func (e *EPaxos) Start(command interface{}) (li LogIndex) {
 
 	e.debug(topicClient, "Starting command at instance %v", li)
 
-	go e.processRequest(command, li)
+	go e.processRequest(command, li, false)
 
 	return
 }
@@ -856,6 +862,6 @@ func Make(peers []*labrpc.ClientEnd, me int, persister *Persister, applyCh chan 
 
 	// start long running goroutine for execution
 	go e.execute()
-
+	go e.ExplicitPreparer()
 	return e
 }

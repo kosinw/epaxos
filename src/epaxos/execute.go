@@ -37,7 +37,7 @@ func (e *EPaxos) execDFs(replica int, curr int, disc [][]int, low [][]int, stack
 	inStack[replica][curr] = true
 	for instance := range e.log[replica][curr].Deps {
 		//We wait if the dependency is not committed yet
-		e.debug(topicExecute, "waiting for %v", instance)
+		//	e.debug(topicExecute, "waiting for %v", instance)
 		for len(e.log[instance.Replica]) <= instance.Index || e.log[instance.Replica][instance.Index].Status < COMMITTED {
 			//	e.debug(topic("DEBUG"), "waiting for %v status %v", instance, e.log[instance.Replica][instance.Index].Status)
 			e.lock.Unlock()
@@ -67,7 +67,7 @@ func (e *EPaxos) execDFs(replica int, curr int, disc [][]int, low [][]int, stack
 	}
 	//if curr is head of its own subtree it is end of connected component
 	if disc[replica][curr] == low[replica][curr] {
-		e.debug(topicExecute, "head %v index %v: \n", replica, curr)
+		//e.debug(topicExecute, "head %v index %v: \n", replica, curr)
 		//	fmt.Printf("head %v index %v: \n", replica, curr)
 		sorted := make([]Instance, 0)
 		c := (*stack)[len(*stack)-1]
@@ -151,7 +151,7 @@ func (e *EPaxos) scc(n int) bool {
 				sccs[R] = append(sccs[R], -1)
 			}
 			if disc[R][i] == -1 {
-				e.debug(topicInfo, "waiting for %v status %v", LogIndex{R, i}, e.log[R][i].Status)
+				//	e.debug(topicInfo, "waiting for %v status %v", LogIndex{R, i}, e.log[R][i].Status)
 				for e.log[R][i].Status < COMMITTED {
 
 					e.lock.Unlock()
@@ -160,7 +160,7 @@ func (e *EPaxos) scc(n int) bool {
 					time.Sleep(SLEEP)
 					e.lock.Lock()
 				}
-				e.debug(topicInfo, "finished waiting for %v status %v", LogIndex{R, i}, e.log[R][i].Status)
+				//	e.debug(topicInfo, "finished waiting for %v status %v", LogIndex{R, i}, e.log[R][i].Status)
 				executed = e.execDFs(R, i, disc, low, &stack, inStack, parents, &Time, sccs, &counter) || executed
 			}
 

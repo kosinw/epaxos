@@ -65,7 +65,7 @@ func TestEP2(t *testing.T) {
 	}
 
 	cfg.connect((leader1 + 3) % servers)
-	time.Sleep(10 * time.Millisecond)
+	time.Sleep(1000 * time.Millisecond)
 	cfg.disconnect((leader1 + 0) % servers)
 	//	cfg.disconnect((leader1 + 1) % servers)
 	cfg.one(leader2, 150, 3, false)

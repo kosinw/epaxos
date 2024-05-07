@@ -23,11 +23,11 @@ func (e *EPaxos) ExplicitPreparer() {
 					continue
 				}
 				passes = true
-				if e.log[replica][i].Status < COMMITTED && e.log[replica][i].Timer != (time.Time{}) && time.Since(e.log[replica][i].Timer) > 500*time.Millisecond {
-					e.debug(topicPrepare, "%v preparing %v replica %v time %v\n", e.me, e.log[replica][i].Position, replica, e.log[replica][i].Timer)
+				if e.log[replica][i].Status < COMMITTED && e.log[replica][i].Timer != (time.Time{}) && time.Since(e.log[replica][i].Timer) > 800*time.Millisecond {
+					//	e.debug(topicPrepare, "%v preparing %v replica %v time %v\n", e.me, e.log[replica][i].Position, replica, e.log[replica][i].Timer)
 					//fmt.Printf("%v preparing %v replica %v\n", e.me, e.log[replica][i].Position, replica)
 					e.log[replica][i].Timer = time.Time{}
-					e.debug(topicPrepare, "%v dpreparing %v replica %v time %v\n", e.me, i, replica, e.log[replica][i].Timer)
+					//e.debug(topicPrepare, "%v dpreparing %v replica %v time %v\n", e.me, i, replica, e.log[replica][i].Timer)
 					position := e.log[replica][i].Position
 					e.lock.Unlock()
 					go e.explicitPrepare(position)
@@ -61,7 +61,7 @@ func (e *EPaxos) broadcastPrepare(position LogIndex, newBallot Ballot) (abort bo
 	preaccepts := make([]Instance, 0)
 	commits := make([]Instance, 0)
 	lk := sync.NewCond(new(sync.Mutex))
-
+	highestBallot := Ballot{}
 	args := PrepareArgs{
 		Position:  position,
 		NewBallot: newBallot,
@@ -86,6 +86,12 @@ func (e *EPaxos) broadcastPrepare(position LogIndex, newBallot Ballot) (abort bo
 				//	fmt.Printf("%v prepares for peer %v %v: %v\n", peer, e.me, position, reply)
 				if peer == original {
 					originalAccept = true
+				}
+				if highestBallot.lt(reply.CurrentInstance.Ballot) {
+					commits = commits[:0]
+					preaccepts = preaccepts[:0]
+					accepts = accepts[:0]
+					highestBallot = reply.CurrentInstance.Ballot
 				}
 				if reply.CurrentInstance.Status == PREACCEPTED {
 					preaccepts = append(preaccepts, reply.CurrentInstance)
@@ -127,7 +133,7 @@ func (e *EPaxos) broadcastPrepare(position LogIndex, newBallot Ballot) (abort bo
 			e.log[position.Replica][position.Index].Deps = commits[0].Deps
 			e.log[position.Replica][position.Index].Seq = commits[0].Seq
 			e.log[position.Replica][position.Index].Status = COMMITTED
-			e.log[position.Replica][position.Index].Command = commits[0].Ballot
+			e.log[position.Replica][position.Index].Command = commits[0].Command
 			e.log[position.Replica][position.Index].Valid = true
 			instance := e.log[position.Replica][position.Index]
 			e.debug(topicPrepare, "%v committing %v: commit path\n", e.me, position)
@@ -140,7 +146,7 @@ func (e *EPaxos) broadcastPrepare(position LogIndex, newBallot Ballot) (abort bo
 			e.log[position.Replica][position.Index].Deps = accepts[0].Deps
 			e.log[position.Replica][position.Index].Seq = accepts[0].Seq
 			e.log[position.Replica][position.Index].Status = ACCEPTED
-			e.log[position.Replica][position.Index].Command = accepts[0].Ballot
+			e.log[position.Replica][position.Index].Command = accepts[0].Command
 			e.log[position.Replica][position.Index].Valid = true
 			instance := e.log[position.Replica][position.Index]
 			e.lock.Unlock()
@@ -173,17 +179,17 @@ func (e *EPaxos) broadcastPrepare(position LogIndex, newBallot Ballot) (abort bo
 			} else {
 				e.lock.Unlock()
 				e.debug(topicPrepare, "%v trying to preaccept %v\n", e.me, position)
-				// e.processRequest(preaccepts[0].Command, position, true)
+				e.processRequest(preaccepts[0].Command, position, true)
 				e.debug(topicPrepare, "through preaccept%v committed %v\n", e.me, position)
 			}
 		} else if len(preaccepts) > 0 {
 			e.debug(topicPrepare, "%v trying to preaccept %v\n", e.me, position)
-			// e.processRequest(preaccepts[0].Command, position, true)
+			e.processRequest(preaccepts[0].Command, position, true)
 			e.debug(topicPrepare, "through preaccept %v committed %v\n", e.me, position)
 
 		} else {
 			e.debug(topicPrepare, "%v trying to preaccept %v: NOP\n", e.me, position)
-			// e.processRequest(NOP, position, true)
+			e.processRequest(NOP, position, true)
 			e.debug(topicPrepare, "%v committed %v: NOP\n", e.me, position)
 		}
 
@@ -191,7 +197,7 @@ func (e *EPaxos) broadcastPrepare(position LogIndex, newBallot Ballot) (abort bo
 	return
 }
 func (e *EPaxos) sendPrepare(server int, args *PrepareArgs, reply *PrepareReply) bool {
-	e.debug(topicPrepare, "Calling %v.Prepare...: %v", replicaName(server), args.Position)
+	//	e.debug(topicPrepare, "Calling %v.Prepare...: %v", replicaName(server), args.Position)
 	ok := false
 	if server != e.me {
 		ok = e.peers[server].Call("EPaxos.Prepare", args, reply)
