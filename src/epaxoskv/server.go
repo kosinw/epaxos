@@ -9,7 +9,6 @@ import (
 	"6.5840/epaxos"
 	"6.5840/labgob"
 	"6.5840/labrpc"
-	// "6.5840/raft"
 )
 
 type Command struct {
@@ -29,16 +28,12 @@ type SeqValue struct {
 }
 
 type KVServer struct {
-	lock      sync.Mutex
-	me        int
-	// rf        *raft.Raft
-	ep		  *epaxos.EPaxos
-	applyCh   chan raft.ApplyMsg
-	dead      int32           // set by Kill()
-	persister *raft.Persister // Object to hold this server's persisted state
-
-	maxraftstate int // snapshot if log grows this big
-
+	lock       sync.Mutex
+	me         int
+	ep         *epaxos.EPaxos
+	applyCh    chan epaxos.Instance
+	dead       int32               // set by Kill()
+	persister  *epaxos.Persister   // Object to hold this server's persisted state
 	kvs        map[string]string   // k/v store which holds data for the service
 	duplicates map[string]SeqValue // client ID -> (seq, value) table for duplicate detection
 	applyIndex int                 // log index of most recently applied operation
@@ -63,20 +58,12 @@ func (kv *KVServer) Get(args *GetArgs, reply *GetReply) {
 	}
 
 	// Prepare a log entry for a GET (a no-op), then try to submit
-	// that to our Raft instance.
+	// that to our EPaxos instance.
 	cmd := Command{Op: OpGet, Key: args.Key, ClerkId: args.ClerkId, SeqNum: args.SeqNum}
 
-	logIndex, startTerm, isLeader := kv.ep.Start(cmd)
+	logIndex := kv.ep.Start(cmd)
 
-	// If we are not the leader just respond to the RPC already
-	// with a WrongLeader error.
-	// if !isLeader {
-	// 	reply.Err = ErrWrongLeader
-	// 	kv.debug(topicInfo, "Failed GET(%v): wrong leader", args.Key)
-	// 	return
-	// }
-
-	kv.debug(topicInfo, "Running GET(%v) as leader for %v #%v", args.Key, args.ClerkId[0:5], args.SeqNum)
+	kv.debug(topicInfo, "Running GET(%v) for %v #%v", args.Key, args.ClerkId[0:5], args.SeqNum)
 
 	// We sleep on this goroutine until the applyIndex has not
 	// yet reached this operation.
@@ -123,7 +110,7 @@ func (kv *KVServer) PutAppend(args *PutAppendArgs, reply *PutAppendReply) {
 	}
 
 	// Prepare a log entry for either a PUT or APPEND, then try to submit
-	// that to our raft instance
+	// that to our EPaxos instance
 	cmd := Command{
 		Op:      args.Op,
 		Key:     args.Key,
@@ -132,18 +119,9 @@ func (kv *KVServer) PutAppend(args *PutAppendArgs, reply *PutAppendReply) {
 		SeqNum:  args.SeqNum,
 	}
 
-	// logIndex, startTerm, isLeader := kv.rf.Start(cmd)
 	logIndex := kv.ep.Start(cmd)
 
-	// If we are not the leader just respond to the RPC already
-	// with a WrongLeader error.
-	// if !isLeader {
-	// 	reply.Err = ErrWrongLeader
-	// 	kv.debug(topicInfo, "Failed %v(%v, '%v'): wrong leader", args.Op, args.Key, args.Value)
-	// 	return
-	// }
-
-	kv.debug(topicInfo, "Running %v(%v, '%v') as leader for %v #%v", args.Op, args.Key, args.Value, args.ClerkId[0:5], args.SeqNum)
+	kv.debug(topicInfo, "Running %v(%v, '%v') for %v #%v", args.Op, args.Key, args.Value, args.ClerkId[0:5], args.SeqNum)
 
 	// We sleep on this goroutine until the applyIndex has caught up.
 	for kv.applyIndex < logIndex {
@@ -187,8 +165,8 @@ func (kv *KVServer) killed() bool {
 	return z == 1
 }
 
-// Process Raft message as a command.
-func (kv *KVServer) processCommand(msg *raft.ApplyMsg) {
+// Process EPaxos message as a command.
+func (kv *KVServer) processCommand(msg *epaxos.Instance) {
 	kv.lock.Lock()
 	defer kv.lock.Unlock()
 
@@ -222,62 +200,18 @@ func (kv *KVServer) processCommand(msg *raft.ApplyMsg) {
 		kv.debug(topicService, "Updating applyIndex %v -> %v", kv.applyIndex, msg.CommandIndex)
 		kv.applyIndex = msg.CommandIndex
 		kv.duplicates[cmd.ClerkId] = SeqValue{SeqNum: cmd.SeqNum, Value: kv.kvs[cmd.Key]}
-
-		// NOTE(kosinw): At this point we should check if our log is too large
-		// and if so request for a snapshot.
-		if kv.shouldSnapshot() {
-			kv.debug(topicSnap,
-				"Starting snapshot, size: %v, index: %v",
-				kv.persister.RaftStateSize(),
-				msg.CommandIndex,
-			)
-
-			// Marshall state into snapshot.
-			snapshot := kv.marshall()
-
-			// Send snapshot to Raft.
-			kv.rf.Snapshot(msg.CommandIndex, snapshot)
-		}
-	}
-}
-
-// Process Raft message as a snapshot.
-func (kv *KVServer) processSnapshot(msg *raft.ApplyMsg) {
-	kv.lock.Lock()
-	defer kv.lock.Unlock()
-
-	kv.assert(msg.SnapshotValid, "Called processSnapshot() when not snapshot message")
-
-	// Only update snapshot if its newer than current state.
-	if msg.SnapshotIndex > kv.applyIndex {
-		kv.unmarshall(msg.Snapshot)
-		kv.debug(topicService, "Updating applyIndex %v -> %v", kv.applyIndex, msg.SnapshotIndex)
-		kv.applyIndex = msg.SnapshotIndex
-	} else {
-		kv.debug(
-			topicSnap,
-			"Not applying snapshot, too old, AI (%v) > SI (%v)",
-			kv.applyIndex,
-			msg.SnapshotIndex,
-		)
 	}
 }
 
 // A long-running goroutine that listens to the apply channel
 // for messages to apply to the k/v store.
-func (kv *KVServer) raftListener() {
+func (kv *KVServer) EPaxosListener() {
 	for msg := range kv.applyCh {
 		if kv.killed() {
 			return
 		}
 
-		if msg.SnapshotValid {
-			kv.processSnapshot(&msg)
-		} else if msg.CommandValid {
-			kv.processCommand(&msg)
-		} else {
-			kv.assert(false, "Unknown message: %v", msg)
-		}
+		kv.processComamnd(&msg)
 	}
 }
 
@@ -298,85 +232,19 @@ func (kv *KVServer) hasProcessed(clerkId string, seqNum int) bool {
 	return false
 }
 
-// Returns whether or not the log is currently large enough to make a snapshot.
-func (kv *KVServer) shouldSnapshot() bool {
-	if kv.maxraftstate == -1 {
-		return false
-	}
-
-	return kv.persister.RaftStateSize() >= kv.maxraftstate
-}
-
-// Marshall persistent state into raw bytes so it can be persisted
-// into stable storage.
-func (kv *KVServer) marshall() []byte {
-	w := new(bytes.Buffer)
-	e := labgob.NewEncoder(w)
-
-	if err := e.Encode(kv.kvs); err != nil {
-		panic(err)
-	}
-
-	if err := e.Encode(kv.duplicates); err != nil {
-		panic(err)
-	}
-
-	if err := e.Encode(kv.applyIndex); err != nil {
-		panic(err)
-	}
-
-	snapshot := w.Bytes()
-
-	kv.debug(topicSnap, "Write snapshot, K: %v, D: %v", kv.kvs, kv.duplicates)
-
-	return snapshot
-}
-
-// Unmarshall persistent state from prior snapshot.
-func (kv *KVServer) unmarshall(snapshot []byte) {
-	if snapshot == nil || len(snapshot) == 0 {
-		return // we had no snapshotted state
-	}
-
-	r := bytes.NewBuffer(snapshot)
-	d := labgob.NewDecoder(r)
-
-	var kvs map[string]string
-	var duplicates map[string]SeqValue
-	var applyIndex int
-
-	if err := d.Decode(&kvs); err != nil {
-		panic(err)
-	}
-
-	if err := d.Decode(&duplicates); err != nil {
-		panic(err)
-	}
-
-	if err := d.Decode(&applyIndex); err != nil {
-		panic(err)
-	}
-
-	kv.debug(topicSnap, "Read snapshot, AI: %v", applyIndex)
-
-	kv.kvs = kvs
-	kv.duplicates = duplicates
-	kv.applyIndex = applyIndex
-}
-
 // servers[] contains the ports of the set of
-// servers that will cooperate via Raft to
+// servers that will cooperate via EPaxos to
 // form the fault-tolerant key/value service.
 // me is the index of the current server in servers[].
-// the k/v server should store snapshots through the underlying Raft
+// the k/v server should store snapshots through the underlying EPaxos
 // implementation, which should call persister.SaveStateAndSnapshot() to
-// atomically save the Raft state along with the snapshot.
-// the k/v server should snapshot when Raft's saved state exceeds maxraftstate bytes,
-// in order to allow Raft to garbage-collect its log. if maxraftstate is -1,
+// atomically save the EPaxos state along with the snapshot.
+// the k/v server should snapshot when EPaxos's saved state exceeds maxEPaxosstate bytes,
+// in order to allow EPaxos to garbage-collect its log. if maxEPaxosstate is -1,
 // you don't need to snapshot.
 // StartKVServer() must return quickly, so it should start goroutines
 // for any long-running work.
-func StartKVServer(servers []*labrpc.ClientEnd, me int, persister *raft.Persister, maxraftstate int) *KVServer {
+func StartKVServer(servers []*labrpc.ClientEnd, me int, persister *epaxos.Persister) *KVServer {
 	// call labgob.Register on structures you want
 	// Go's RPC library to marshall/unmarshall.
 	enableLogging()
@@ -385,23 +253,19 @@ func StartKVServer(servers []*labrpc.ClientEnd, me int, persister *raft.Persiste
 	kv := new(KVServer)
 	kv.lock = sync.Mutex{}
 	kv.me = me
-	kv.maxraftstate = maxraftstate
 	kv.dead = 0
 	kv.persister = persister
-	kv.applyCh = make(chan raft.ApplyMsg)
+	kv.applyCh = make(chan epaxos.Instance)
 
 	// You may need initialization code here (4A).
 	kv.kvs = make(map[string]string)
 	kv.duplicates = make(map[string]SeqValue)
 
-	// Unmarshall state from a snapshot (4B).
-	kv.unmarshall(persister.ReadSnapshot())
-
-	kv.rf = raft.Make(servers, me, persister, kv.applyCh)
+	kv.rf = epaxos.Make(servers, me, persister, kv.applyCh)
 	kv.debug(topicService, "Starting with AI: %v", kv.applyIndex)
 
-	// Spawn goroutine to apply commands from Raft.
-	go kv.raftListener()
+	// Spawn goroutine to apply commands from EPaxos.
+	go kv.EPaxosListener()
 
 	return kv
 }
