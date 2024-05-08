@@ -213,6 +213,9 @@ func (e *EPaxos) preAcceptPhase(cmd interface{}, ix LogIndex, nofast bool) (comm
 		instance := e.getInstance(ix)
 		instance.Deps = updatedDeps
 		instance.Seq = updatedSeq
+		for dep := range instance.Deps {
+			e.getInstance(dep)
+		}
 		e.persist()
 		e.debug(topicLog, "Updated %v: %v", ix, *instance)
 	}
@@ -229,7 +232,9 @@ func (e *EPaxos) acceptPhase(pos LogIndex) (abort bool) {
 	abort = false
 
 	instance := e.getInstance(pos)
-
+	for dep := range instance.Deps {
+		e.getInstance(dep)
+	}
 	// pre-condition: the instance must be valid
 	assert(
 		instance.Valid,
