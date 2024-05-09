@@ -576,7 +576,7 @@ func (e *EPaxos) Accept(args *AcceptArgs, reply *AcceptReply) {
 	}
 
 	e.debug(topicAccept, "Updated %v: %v", args.Position, *instance)
-
+	//fmt.Printf("%v Accepted %v\n", e.me, instance)
 	reply.Success = true
 }
 
@@ -684,8 +684,9 @@ func (e *EPaxos) Commit(args *CommitArgs, reply *CommitReply) {
 		return
 	}
 
-	if instance.Valid && instance.Status > COMMITTED {
+	if instance.Valid && instance.Status >= COMMITTED {
 		e.debug(topicCommit, "Instance in a further phase: %v < %v", COMMITTED, instance.Status)
+		instance.Ballot = args.Ballot
 		reply.Success = true
 		return
 	}
@@ -702,7 +703,7 @@ func (e *EPaxos) Commit(args *CommitArgs, reply *CommitReply) {
 	}
 
 	e.debug(topicCommit, "Updated %v: %v", args.Position, *instance)
-
+	//fmt.Printf("%v Committed %v\n", e.me, instance)
 	reply.Success = true
 }
 

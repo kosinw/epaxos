@@ -1,6 +1,7 @@
 package epaxos
 
 import (
+	"fmt"
 	"sync"
 	"time"
 )
@@ -61,7 +62,7 @@ func (e *EPaxos) broadcastPrepare(position LogIndex, newBallot Ballot) (abort bo
 	preaccepts := make([]Instance, 0)
 	commits := make([]Instance, 0)
 	lk := sync.NewCond(new(sync.Mutex))
-	highestBallot := Ballot{}
+	// highestBallot := Ballot{}
 	args := PrepareArgs{
 		Position:  position,
 		NewBallot: newBallot,
@@ -87,17 +88,21 @@ func (e *EPaxos) broadcastPrepare(position LogIndex, newBallot Ballot) (abort bo
 				if peer == original {
 					originalAccept = true
 				}
-				if highestBallot.lt(reply.CurrentInstance.Ballot) {
-					commits = commits[:0]
-					preaccepts = preaccepts[:0]
-					accepts = accepts[:0]
-					highestBallot = reply.CurrentInstance.Ballot
-				}
+				// if highestBallot.lt(reply.CurrentInstance.Ballot) {
+				// 	commits = commits[:0]
+				// 	preaccepts = preaccepts[:0]
+				// 	accepts = accepts[:0]
+				// 	highestBallot = reply.CurrentInstance.Ballot
+				// }
+				//fmt.Printf("EP %v: %v replied for %v status %v %v\n",e.me,peer,position,reply.CurrentInstance.Status,
+			//	reply.CurrentInstance.Status>=COMMITTED)
 				if reply.CurrentInstance.Status == PREACCEPTED {
 					preaccepts = append(preaccepts, reply.CurrentInstance)
 				} else if reply.CurrentInstance.Status == ACCEPTED {
 					accepts = append(accepts, reply.CurrentInstance)
 				} else if reply.CurrentInstance.Status >= COMMITTED {
+			//		fmt.Printf("SECOND EP %v: %v replied for %v status %v %v\n",e.me,peer,position,reply.CurrentInstance.Status,
+			//	reply.CurrentInstance.Status>=COMMITTED)
 					commits = append(commits, reply.CurrentInstance)
 				}
 			} else {
@@ -126,9 +131,14 @@ func (e *EPaxos) broadcastPrepare(position LogIndex, newBallot Ballot) (abort bo
 		}
 		e.debug(topicPrepare, "%v received prepare replies for %v: preaccepts: %v accepts: %v commits: %v\n",
 			e.me, position, len(preaccepts), len(accepts), len(commits))
+		//fmt.Printf("%v received prepare replies for %v: preaccepts: %v accepts: %v commits: %v\n",
+	//	e.me, position, len(preaccepts), len(accepts), len(commits))
 		//	fmt.Printf("%v received prepare replies for %v: preaccepts: %v accepts: %v commits: %v\n",
 		//	e.me, position, len(preaccepts), len(accepts), len(commits))
 		if len(commits) > 0 {
+			// if (commits[0].Command == -1){
+			// 	fmt.Println("bad commit")
+			// }
 			e.lock.Lock()
 			e.log[position.Replica][position.Index].Deps = commits[0].Deps
 			e.log[position.Replica][position.Index].Seq = commits[0].Seq
@@ -142,6 +152,9 @@ func (e *EPaxos) broadcastPrepare(position LogIndex, newBallot Ballot) (abort bo
 			_ = e.broadcastCommit(instance)
 			e.debug(topicPrepare, "%v committed %v: commit path\n", e.me, position)
 		} else if len(accepts) > 0 {
+			// if (accepts[0].Command == -1){
+			// 	fmt.Println("bad accept")
+			// }
 			e.lock.Lock()
 			e.log[position.Replica][position.Index].Deps = accepts[0].Deps
 			e.log[position.Replica][position.Index].Seq = accepts[0].Seq
@@ -170,6 +183,9 @@ func (e *EPaxos) broadcastPrepare(position LogIndex, newBallot Ballot) (abort bo
 			}
 
 			if !wrongLen && mapsEqual(union, preaccepts[0].Deps) {
+				// if (preaccepts[0].Command == -1){
+				// 	fmt.Println("bad accept")
+				// }
 				instance := e.log[position.Replica][position.Index]
 				e.lock.Unlock()
 				abort = e.broadcastAccept(instance)
@@ -177,17 +193,25 @@ func (e *EPaxos) broadcastPrepare(position LogIndex, newBallot Ballot) (abort bo
 					_ = e.broadcastCommit(instance)
 				}
 			} else {
+				// if (preaccepts[0].Command == -1){
+				// 	fmt.Println("bad preaccept")
+				// }
 				e.lock.Unlock()
 				e.debug(topicPrepare, "%v trying to preaccept %v\n", e.me, position)
 				e.processRequest(preaccepts[0].Command, position, true)
 				e.debug(topicPrepare, "through preaccept%v committed %v\n", e.me, position)
 			}
 		} else if len(preaccepts) > 0 {
+			// if (preaccepts[0].Command == -1){
+			// 	fmt.Println("bad preaccept")
+			// }
 			e.debug(topicPrepare, "%v trying to preaccept %v\n", e.me, position)
 			e.processRequest(preaccepts[0].Command, position, true)
 			e.debug(topicPrepare, "through preaccept %v committed %v\n", e.me, position)
 
 		} else {
+			fmt.Printf("%v doing nop %v\n",e.me, e.log[position.Replica][position.Index])
+			//e.debug(topicPrepare,"doing nop %v\n", e.log[position.Replica][position.Index])
 			e.debug(topicPrepare, "%v trying to preaccept %v: NOP\n", e.me, position)
 			e.processRequest(NOP, position, true)
 			e.debug(topicPrepare, "%v committed %v: NOP\n", e.me, position)
@@ -224,6 +248,7 @@ func (e *EPaxos) Prepare(args *PrepareArgs, reply *PrepareReply) {
 		if ballot.le(args.NewBallot) {
 			reply.Success = true
 			reply.CurrentInstance = e.log[args.Position.Replica][args.Position.Index]
+			reply.CurrentInstance.Valid = e.log[args.Position.Replica][args.Position.Index].Valid
 		} else {
 			reply.Success = false
 		}

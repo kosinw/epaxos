@@ -198,7 +198,7 @@ func TestEPReexecution(t *testing.T) {
 	cfg := make_config(t, servers, false, interferes1)
 	defer cfg.cleanup()
 
-	cfg.begin("Test EP Re-Executino")
+	cfg.begin("Test EP Re-Execution")
 
 	cfg.peers[leader1].Start(101)
 	time.Sleep(10 * time.Millisecond)
