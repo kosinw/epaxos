@@ -24,7 +24,7 @@ func (e *EPaxos) ExplicitPreparer() {
 				}
 				passes = true
 				if e.log[replica][i].Status < COMMITTED && e.log[replica][i].Timer != (time.Time{}) && time.Since(e.log[replica][i].Timer) > 800*time.Millisecond {
-					//	e.debug(topicPrepare, "%v preparing %v replica %v time %v\n", e.me, e.log[replica][i].Position, replica, e.log[replica][i].Timer)
+					e.debug(topicPrepare, "%v preparing %v replica %v time %v\n", e.me, e.log[replica][i].Position, replica, e.log[replica][i].Timer)
 					//fmt.Printf("%v preparing %v replica %v\n", e.me, e.log[replica][i].Position, replica)
 					e.log[replica][i].Timer = time.Time{}
 					//e.debug(topicPrepare, "%v dpreparing %v replica %v time %v\n", e.me, i, replica, e.log[replica][i].Timer)

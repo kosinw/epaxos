@@ -44,7 +44,8 @@ TOPICS = {
     "CONFIG": "#98719f",
     "INSTALL": "#d08341",
     "ACCEPT": "#8cc7a1",
-    "PACCEPT": "#d0cfec"
+    "PACCEPT": "#d0cfec",
+    "PREPARE": "#d00000"
 }
 # fmt: on
 
