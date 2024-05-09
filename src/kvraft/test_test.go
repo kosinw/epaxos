@@ -1,16 +1,20 @@
 package kvraft
 
-import "6.5840/porcupine"
-import "6.5840/models"
-import "testing"
-import "strconv"
-import "time"
-import "math/rand"
-import "strings"
-import "sync"
-import "sync/atomic"
-import "fmt"
-import "io/ioutil"
+import (
+	"fmt"
+	"io/ioutil"
+	"math/rand"
+	"os"
+	"strconv"
+	"strings"
+	"sync"
+	"sync/atomic"
+	"testing"
+	"time"
+
+	"6.5840/models"
+	"6.5840/porcupine"
+)
 
 // The tester generously allows solutions to complete elections in one second
 // (much more than the paper's range of timeouts).
@@ -37,6 +41,16 @@ func (log *OpLog) Read() []porcupine.Operation {
 	return ops
 }
 
+
+func logOperation(operation string, start int64, end int64) {
+	file, _ := os.OpenFile("latency.log", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+    latency := end - start
+    _, err := file.WriteString(fmt.Sprintf("%s: Start: %d, End: %d, Latency: %d µs\n", operation, start, end, latency))
+    if err != nil {
+        fmt.Println("Error writing to file:", err)
+    }
+}
+
 // to make sure timestamps use the monotonic clock, instead of computing
 // absolute timestamps with `time.Now().UnixNano()` (which uses the wall
 // clock), we measure time relative to `t0` using `time.Since(t0)`, which uses
@@ -58,7 +72,7 @@ func Get(cfg *config, ck *Clerk, key string, log *OpLog, cli int) string {
 			ClientId: cli,
 		})
 	}
-
+	logOperation("GET", start, end)
 	return v
 }
 
@@ -76,6 +90,7 @@ func Put(cfg *config, ck *Clerk, key string, value string, log *OpLog, cli int) 
 			ClientId: cli,
 		})
 	}
+	logOperation("PUT", start, end)
 }
 
 func Append(cfg *config, ck *Clerk, key string, value string, log *OpLog, cli int) {
@@ -92,6 +107,7 @@ func Append(cfg *config, ck *Clerk, key string, value string, log *OpLog, cli in
 			ClientId: cli,
 		})
 	}
+	logOperation("APPEND", start, end)
 }
 
 func check(cfg *config, t *testing.T, ck *Clerk, key string, value string) {
