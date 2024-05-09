@@ -198,7 +198,7 @@ func (e *EPaxos) preAcceptPhase(cmd interface{}, ix LogIndex, nofast bool) (comm
 	e.Unlock()
 
 	// broadcast and wait for pre-accept messages to our other peers
-	updatedSeq, updatedDeps, abort := e.broadcastPreAccept(instanceCopy, nofast)
+	updatedSeq, updatedDeps, abort, commit := e.broadcastPreAccept(instanceCopy, nofast)
 
 	e.Lock()
 	defer e.Unlock()
@@ -221,7 +221,7 @@ func (e *EPaxos) preAcceptPhase(cmd interface{}, ix LogIndex, nofast bool) (comm
 	}
 
 	// only commit if nothing changed
-	commit = (seq == updatedSeq) && (mapsEqual(deps, updatedDeps))
+	commit = commit && (seq == updatedSeq) && (mapsEqual(deps, updatedDeps))
 
 	return
 }
@@ -297,6 +297,7 @@ func (e *EPaxos) commitPhase(pos LogIndex) {
 }
 
 func (e *EPaxos) processRequest(cmd interface{}, ix LogIndex, nofast bool) {
+	e.debug(topicPreAccept, "Processing request %v", cmd)
 	// run pre-accept phase
 	commit, abort := e.preAcceptPhase(cmd, ix, nofast)
 
@@ -319,7 +320,7 @@ func (e *EPaxos) processRequest(cmd interface{}, ix LogIndex, nofast bool) {
 }
 
 // broadcastPreAccept sends out PreAccept messages to all nodes.
-func (e *EPaxos) broadcastPreAccept(instance Instance, nofast bool) (seq int, deps map[LogIndex]int, abort bool) {
+func (e *EPaxos) broadcastPreAccept(instance Instance, nofast bool) (seq int, deps map[LogIndex]int, abort bool, commit bool) {
 	replyCount := 1
 	rejectCount := 0
 	unionSeq := instance.Seq
@@ -347,6 +348,7 @@ func (e *EPaxos) broadcastPreAccept(instance Instance, nofast bool) (seq int, de
 
 			for !e.sendPreAccept(peer, &args, &reply) {
 				reply = PreAcceptReply{}
+				time.Sleep(10 * time.Millisecond)
 			}
 
 			lk.L.Lock()
@@ -384,11 +386,12 @@ func (e *EPaxos) broadcastPreAccept(instance Instance, nofast bool) (seq int, de
 
 		// Fast path quorum
 		if !nofast && replyCount >= quorum && instance.Seq == unionSeq && mapsEqual(instance.Deps, unionDeps) {
-			e.debug(topicPreAccept, "Received succesful fast path quorum for instance %v...", instance.Position)
+			e.debug(topicPreAccept, "Received successful fast path quorum for instance %v...", instance.Position)
 			abort = false
+			commit = true
 			break
 		} else {
-			e.debug(topicPreAccept, "Received succesful slow path quorum for instance %v...", instance.Position)
+			e.debug(topicPreAccept, "Received successful slow path quorum for instance %v...", instance.Position)
 			abort = false
 			break
 		}
@@ -493,6 +496,7 @@ func (e *EPaxos) broadcastAccept(instance Instance) (abort bool) {
 
 			for !e.sendAccept(peer, &args, &reply) {
 				reply = AcceptReply{}
+				time.Sleep(10 * time.Millisecond)
 			}
 
 			lk.L.Lock()
@@ -518,12 +522,13 @@ func (e *EPaxos) broadcastAccept(instance Instance) (abort bool) {
 		if rejectCount > 0 {
 			e.debug(topicAccept, "Stepping down as command leader for %v...", instance.Position)
 			abort = true
+			instance.Timer = time.Now().Add(time.Duration(rand.Intn(300)) * time.Millisecond)
 			break
 		}
 
 		// Fast path quorum
 		if replyCount >= majority {
-			e.debug(topicAccept, "Received succesful slow path majority for instance %v...", instance.Position)
+			e.debug(topicAccept, "Received successful slow path majority for instance %v...", instance.Position)
 			abort = false
 			break
 		}
@@ -592,6 +597,7 @@ func (e *EPaxos) broadcastCommit(instance Instance) (abort bool) {
 	lk := sync.NewCond(new(sync.Mutex))
 	replyCount := 1
 	rejectCount := 0
+	timeout := time.Now()
 
 	args := CommitArgs{
 		Command:  instance.Command,
@@ -607,10 +613,15 @@ func (e *EPaxos) broadcastCommit(instance Instance) (abort bool) {
 		}
 
 		go func(peer int) {
+			if time.Since(timeout) >= 1000 * time.Millisecond {
+				instance.Timer = time.Now().Add(time.Duration(rand.Intn(300)) * time.Millisecond)
+				return
+			}
 			reply := CommitReply{}
-
+			
 			for !e.sendCommit(peer, &args, &reply) {
 				reply = CommitReply{}
+				time.Sleep(10 * time.Millisecond)
 			}
 
 			lk.L.Lock()
@@ -632,6 +643,11 @@ func (e *EPaxos) broadcastCommit(instance Instance) (abort bool) {
 
 	for !e.killed() {
 		lk.Wait()
+
+		if time.Since(timeout) >= 1000 * time.Millisecond {
+			instance.Timer = time.Now().Add(time.Duration(rand.Intn(300)) * time.Millisecond)
+			return
+		}
 
 		if rejectCount > 0 {
 			e.debug(topicCommit, "Stepping down as command leader for %v...", instance.Position)
@@ -815,7 +831,7 @@ func (e *EPaxos) primeLog() {
 			}
 
 			if e.log[R][i].Status != COMMITTED {
-				e.log[R][i].Timer = time.Now()
+				e.log[R][i].Timer = time.Now().Add(time.Duration(rand.Intn(300)) * time.Millisecond)
 			}
 		}
 	}

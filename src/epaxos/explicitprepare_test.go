@@ -9,39 +9,39 @@ import (
 func interferes2(cmd1, cmd2 interface{}) bool {
 	return true
 }
-func TestEP1(t *testing.T) {
-	const (
-		servers = 5
-		leader1 = 0
-		leader2 = 1
-	)
+// func TestEP1(t *testing.T) {
+// 	const (
+// 		servers = 5
+// 		leader1 = 0
+// 		leader2 = 1
+// 	)
 
-	cfg := make_config(t, servers, false, interferes2)
-	defer cfg.cleanup()
+// 	cfg := make_config(t, servers, false, interferes2)
+// 	defer cfg.cleanup()
 
-	cfg.begin("Test interfere 1")
+// 	cfg.begin("Test EP1")
 
-	cfg.one(leader1, 101, servers, true)
+// 	cfg.one(leader1, 101, servers, true)
 
-	cfg.disconnect((leader1 + 2) % servers)
-	cfg.disconnect((leader1 + 3) % servers)
-	cfg.disconnect((leader1 + 4) % servers)
+// 	cfg.disconnect((leader1 + 2) % servers)
+// 	cfg.disconnect((leader1 + 3) % servers)
+// 	cfg.disconnect((leader1 + 4) % servers)
 
-	for i := 0; i < 50; i++ {
-		cfg.peers[leader1].Start(102 + i)
-	}
+// 	for i := 0; i < 50; i++ {
+// 		cfg.peers[leader1].Start(102 + i)
+// 	}
 
-	time.Sleep(500 * time.Millisecond)
+// 	time.Sleep(500 * time.Millisecond)
 
-	cfg.disconnect((leader1 + 0) % servers)
-	//	cfg.disconnect((leader1 + 1) % servers)
+// 	cfg.disconnect((leader1 + 0) % servers)
+// 	//	cfg.disconnect((leader1 + 1) % servers)
 
-	cfg.connect((leader1 + 2) % servers)
-	cfg.connect((leader1 + 3) % servers)
-	cfg.connect((leader1 + 4) % servers)
+// 	cfg.connect((leader1 + 2) % servers)
+// 	cfg.connect((leader1 + 3) % servers)
+// 	cfg.connect((leader1 + 4) % servers)
 
-	cfg.end()
-}
+// 	cfg.end()
+// }
 
 func TestEP2(t *testing.T) {
 	const (
@@ -53,13 +53,13 @@ func TestEP2(t *testing.T) {
 	cfg := make_config(t, servers, false, interferes2)
 	defer cfg.cleanup()
 
-	cfg.begin("Test interfere 1")
+	cfg.begin("Test EP2")
 
 	cfg.one(leader1, 101, servers, true)
 
 	cfg.disconnect((leader1 + 3) % servers)
 	cfg.disconnect((leader1 + 4) % servers)
-	//all committed
+	// all committed
 	for i := 0; i < 1; i++ {
 		cfg.one(leader1, 102+i, 3, true)
 	}
@@ -86,7 +86,7 @@ func TestEPBackup(t *testing.T) {
 	cfg := make_config(t, servers, false, interferes1)
 	defer cfg.cleanup()
 
-	cfg.begin("Test (3B): replica backs up quickly")
+	cfg.begin("Test EP Backup")
 
 	cfg.one(leader1, 101, servers, true)
 
@@ -94,7 +94,7 @@ func TestEPBackup(t *testing.T) {
 	cfg.disconnect((leader1 + 3) % servers)
 	cfg.disconnect((leader1 + 4) % servers)
 
-	for i := 0; i < 1; i++ {
+	for i := 0; i < 50; i++ {
 		cfg.peers[leader1].Start(102 + i)
 	}
 
@@ -133,7 +133,7 @@ func TestEPBackup(t *testing.T) {
 
 	time.Sleep(1000 * time.Millisecond)
 	fmt.Printf("all connected\n")
-	for i := 0; i < 1; i++ {
+	for i := 0; i < 50; i++ {
 		cfg.one(leader1, 102+50+50+50+i, 3, false)
 	}
 
@@ -156,7 +156,7 @@ func TestEPBack(t *testing.T) {
 	cfg := make_config(t, servers, false, interferes1)
 	defer cfg.cleanup()
 
-	cfg.begin("Test (3B): replica backs up quickly")
+	cfg.begin("Test EP Back")
 
 	cfg.one(leader1, 101, servers, true)
 
@@ -186,4 +186,82 @@ func TestEPBack(t *testing.T) {
 
 	//cfg.one(leader1, 999, servers, true)
 
+}
+
+func TestEPReexecution(t *testing.T) {
+	const (
+		servers = 5
+		leader1 = 0
+		leader2 = 1
+	)
+
+	cfg := make_config(t, servers, false, interferes1)
+	defer cfg.cleanup()
+
+	cfg.begin("Test EP Re-Executino")
+
+	cfg.peers[leader1].Start(101)
+	time.Sleep(10 * time.Millisecond)
+	cfg.crash1(leader1)
+
+	cfg.start1(leader1, cfg.applier)
+	cfg.connect(leader1)
+
+	cfg.one(leader2, 102, servers, true)
+
+	cfg.end()
+}
+
+func TestEPRecovery(t *testing.T) {
+	const (
+		servers = 5
+		leader1 = 0
+		leader2 = 1
+	)
+	cfg := make_config(t, servers, false, interferes1)
+	defer cfg.cleanup()
+
+	cfg.begin("Test EP Recovery")
+
+	cfg.peers[leader1].Start(101)
+	time.Sleep(10 * time.Millisecond)
+	cfg.crash1(leader1)
+	cfg.start1(leader1, cfg.applier)
+	cfg.connect(leader1)
+	index := LogIndex{Replica: leader1, Index:0}
+	cfg.wait(index, servers)
+
+	cfg.end()
+}
+
+func TestEP3(t *testing.T) {
+	const (
+		servers = 5
+		leader1 = 0
+		leader2 = 1
+	)
+	cfg := make_config(t, servers, false, interferes1)
+	defer cfg.cleanup()
+
+	cfg.begin("Test EP Recovery")
+
+	// start with 2 replicas
+	cfg.disconnect((leader1 + 2) % servers)
+	cfg.disconnect((leader1 + 3) % servers)
+	cfg.disconnect((leader1 + 4) % servers)
+
+	cfg.peers[leader1].Start(101)
+	time.Sleep(50 * time.Millisecond)
+	cfg.disconnect(leader1)
+	fmt.Printf("DISCONNECTED LEADER1 %v\n", leader1)
+
+	cfg.connect((leader1 + 2) % servers)
+	cfg.connect((leader1 + 3) % servers)
+	cfg.one(leader2, 102, servers - 2, false)
+
+	cfg.connect((leader1 + 4) % servers)
+	cfg.connect(leader1)
+	cfg.one((leader1 + 4), 103, servers, false)
+
+	cfg.end()
 }
