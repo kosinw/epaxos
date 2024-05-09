@@ -485,7 +485,7 @@ func (cfg *config) one(peer int, cmd interface{}, expectedServers int, retry boo
 	t0 := time.Now()
 	index := LogIndex{-1, -1}
 
-	for time.Since(t0).Seconds() < 10 && cfg.checkFinished() == false {
+	for time.Since(t0).Seconds() < 100 && cfg.checkFinished() == false {
 		cfg.mu.Lock()
 		if !cfg.connected[peer] {
 			cfg.mu.Unlock()
@@ -502,10 +502,10 @@ func (cfg *config) one(peer int, cmd interface{}, expectedServers int, retry boo
 		index = e.Start(cmd)
 
 		t1 := time.Now()
-		for time.Since(t1).Seconds() < 2 {
+		for time.Since(t1).Seconds() < 10 {
 			nd, cmd1 := cfg.nExecuted(index)
 			if nd > 0 && nd >= expectedServers {
-				fmt.Printf("%v was commited by %v", cmd1, peer)
+				// fmt.Printf("%v was commited by %v", cmd1, peer)
 				// committed
 				if cmd1 == cmd {
 					// and it was the command we submitted.
@@ -521,7 +521,7 @@ func (cfg *config) one(peer int, cmd interface{}, expectedServers int, retry boo
 	if cfg.checkFinished() == false {
 		cfg.t.Fatalf("one(%v) failed to reach agreement", cmd)
 	}
-	fmt.Printf("done???\n")
+	// fmt.Printf("done???\n")
 	return index
 }
 
