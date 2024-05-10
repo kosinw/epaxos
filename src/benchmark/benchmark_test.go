@@ -1,6 +1,8 @@
 package benchmark
 
 import (
+	"fmt"
+	"strconv"
 	"testing"
 	"time"
 )
@@ -13,25 +15,25 @@ var t0 = time.Now()
 
 // get/put/putappend that keep counts
 func Get(cfg Config, ck Clerk, key string, cli int) string {
-	start := int64(time.Since(t0))
+	// start := int64(time.Since(t0))
 	v := ck.Get(key)
-	end := int64(time.Since(t0))
+	// end := int64(time.Since(t0))
 	cfg.op()
 
 	return v
 }
 
 func Put(cfg Config, ck Clerk, key string, value string, cli int) {
-	start := int64(time.Since(t0))
+	// start := int64(time.Since(t0))
 	ck.Put(key, value)
-	end := int64(time.Since(t0))
+	// end := int64(time.Since(t0))
 	cfg.op()
 }
 
 func Append(cfg Config, ck Clerk, key string, value string, cli int) {
-	start := int64(time.Since(t0))
+	// start := int64(time.Since(t0))
 	ck.Append(key, value)
-	end := int64(time.Since(t0))
+	// end := int64(time.Since(t0))
 	cfg.op()
 }
 
@@ -71,7 +73,7 @@ func spawn_clients_and_wait(t *testing.T, cfg Config, ncli int, fn func(me int, 
 
 type makeConfigFn func(t *testing.T, n int, unreliable bool) Config
 
-func GenericBasicLatencyBenchmark(t *testing.T, part string, make_config makeConfigFn) {
+func BasicLatencyBenchmark(t *testing.T, part string, make_config makeConfigFn) {
 	const nservers = 3
 	const numOps = 1000
 	cfg := make_config(t, nservers, false)
@@ -79,32 +81,37 @@ func GenericBasicLatencyBenchmark(t *testing.T, part string, make_config makeCon
 
 	ck := cfg.makeClient(cfg.All())
 
-	// cfg.begin(fmt.Sprintf("Test: ops complete fast enough (%s)", part))
+	cfg.begin(fmt.Sprintf("Bench: %s basic latency benchmark", part))
 
 	// // wait until first op completes, so we know a leader is elected
 	// // and KV servers are ready to process client requests
-	// ck.Get("x")
+	ck.Get("x")
 
-	// start := time.Now()
-	// for i := 0; i < numOps; i++ {
-	// 	ck.Append("x", "x 0 "+strconv.Itoa(i)+" y")
-	// }
-	// dur := time.Since(start)
+	start := time.Now()
+	for i := 0; i < numOps; i++ {
+		ck.Append("x", "x 0 "+strconv.Itoa(i)+" y")
+	}
+	dur := time.Since(start)
 
 	// v := ck.Get("x")
+	ck.Get("x")
 	// checkClntAppends(t, 0, v, numOps)
 
-	// // heartbeat interval should be ~ 100 ms; require at least 3 ops per
-	// const heartbeatInterval = 100 * time.Millisecond
-	// const opsPerInterval = 3
-	// const timePerOp = heartbeatInterval / opsPerInterval
-	// if dur > numOps*timePerOp {
-	// 	t.Fatalf("Operations completed too slowly %v/op > %v/op\n", dur/numOps, timePerOp)
-	// }
+	// heartbeat interval should be ~ 100 ms; require at least 3 ops per
+	const heartbeatInterval = 100 * time.Millisecond
+	const opsPerInterval = 3
+	const timePerOp = heartbeatInterval / opsPerInterval
+	if dur > numOps*timePerOp {
+		t.Fatalf("Operations completed too slowly %v/op > %v/op\n", dur/numOps, timePerOp)
+	}
 
 	cfg.end()
 }
 
 func TestRaftBasicLatencyBenchmark(t *testing.T) {
-	GenericBasicLatencyBenchmark(t, "raft basic", make_raft_config)
+	BasicLatencyBenchmark(t, "raft", make_raft_config)
+}
+
+func TestEPaxosBasicLatencyBenchmark(t *testing.T) {
+	BasicLatencyBenchmark(t, "epaxos (100%)", make_epaxos_config)
 }
