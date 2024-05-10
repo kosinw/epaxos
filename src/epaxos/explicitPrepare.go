@@ -24,7 +24,7 @@ func (e *EPaxos) ExplicitPreparer() {
 					continue
 				}
 				passes = true
-				if e.log[replica][i].Status < COMMITTED && e.log[replica][i].Timer != (time.Time{}) && time.Since(e.log[replica][i].Timer) > 800*time.Millisecond {
+				if e.log[replica][i].Status < COMMITTED && e.log[replica][i].Timer != (time.Time{}) && time.Since(e.log[replica][i].Timer) > 8000*time.Millisecond {
 					e.debug(topicPrepare, "%v preparing %v replica %v time %v\n", e.me, e.log[replica][i].Position, replica, e.log[replica][i].Timer)
 					//fmt.Printf("%v preparing %v replica %v\n", e.me, e.log[replica][i].Position, replica)
 					e.log[replica][i].Timer = time.Time{}
@@ -53,6 +53,7 @@ func (e *EPaxos) explicitPrepare(position LogIndex) {
 	e.lock.Unlock()
 	e.broadcastPrepare(position, newBallot)
 }
+
 func (e *EPaxos) broadcastPrepare(position LogIndex, newBallot Ballot) (abort bool) {
 	majority := e.numPeers()/2 + 1
 	replyCount := 0
@@ -95,14 +96,14 @@ func (e *EPaxos) broadcastPrepare(position LogIndex, newBallot Ballot) (abort bo
 				// 	highestBallot = reply.CurrentInstance.Ballot
 				// }
 				//fmt.Printf("EP %v: %v replied for %v status %v %v\n",e.me,peer,position,reply.CurrentInstance.Status,
-			//	reply.CurrentInstance.Status>=COMMITTED)
+				//	reply.CurrentInstance.Status>=COMMITTED)
 				if reply.CurrentInstance.Status == PREACCEPTED {
 					preaccepts = append(preaccepts, reply.CurrentInstance)
 				} else if reply.CurrentInstance.Status == ACCEPTED {
 					accepts = append(accepts, reply.CurrentInstance)
 				} else if reply.CurrentInstance.Status >= COMMITTED {
-			//		fmt.Printf("SECOND EP %v: %v replied for %v status %v %v\n",e.me,peer,position,reply.CurrentInstance.Status,
-			//	reply.CurrentInstance.Status>=COMMITTED)
+					//		fmt.Printf("SECOND EP %v: %v replied for %v status %v %v\n",e.me,peer,position,reply.CurrentInstance.Status,
+					//	reply.CurrentInstance.Status>=COMMITTED)
 					commits = append(commits, reply.CurrentInstance)
 				}
 			} else {
@@ -132,7 +133,7 @@ func (e *EPaxos) broadcastPrepare(position LogIndex, newBallot Ballot) (abort bo
 		e.debug(topicPrepare, "%v received prepare replies for %v: preaccepts: %v accepts: %v commits: %v\n",
 			e.me, position, len(preaccepts), len(accepts), len(commits))
 		//fmt.Printf("%v received prepare replies for %v: preaccepts: %v accepts: %v commits: %v\n",
-	//	e.me, position, len(preaccepts), len(accepts), len(commits))
+		//	e.me, position, len(preaccepts), len(accepts), len(commits))
 		//	fmt.Printf("%v received prepare replies for %v: preaccepts: %v accepts: %v commits: %v\n",
 		//	e.me, position, len(preaccepts), len(accepts), len(commits))
 		if len(commits) > 0 {
@@ -210,7 +211,7 @@ func (e *EPaxos) broadcastPrepare(position LogIndex, newBallot Ballot) (abort bo
 			e.debug(topicPrepare, "through preaccept %v committed %v\n", e.me, position)
 
 		} else {
-			fmt.Printf("%v doing nop %v\n",e.me, e.log[position.Replica][position.Index])
+			fmt.Printf("%v doing nop %v\n", e.me, e.log[position.Replica][position.Index])
 			//e.debug(topicPrepare,"doing nop %v\n", e.log[position.Replica][position.Index])
 			e.debug(topicPrepare, "%v trying to preaccept %v: NOP\n", e.me, position)
 			e.processRequest(NOP, position, true)

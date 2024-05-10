@@ -408,6 +408,8 @@ func TestBackup3B(t *testing.T) {
 	cfg.connect((leader1 + 1) % servers)
 	cfg.connect(other)
 
+	time.Sleep(500 * time.Millisecond)
+
 	for i := 0; i < 50; i++ {
 		cfg.one(leader1, 102+50+50+50+i, 3, true)
 	}
@@ -598,16 +600,16 @@ func TestPersist23C(t *testing.T) {
 		cfg.disconnect((leader1 + 3) % servers)
 		cfg.disconnect((leader1 + 4) % servers)
 
-		cfg.start1((leader1 + 1) % servers, cfg.applier)
-		cfg.start1((leader1 + 2) % servers, cfg.applier)
+		cfg.start1((leader1+1)%servers, cfg.applier)
+		cfg.start1((leader1+2)%servers, cfg.applier)
 		cfg.connect((leader1 + 1) % servers)
 		cfg.connect((leader1 + 2) % servers)
 
 		time.Sleep(1000 * time.Millisecond)
 
-		cfg.start1((leader1 + 3) % servers, cfg.applier)
+		cfg.start1((leader1+3)%servers, cfg.applier)
 		cfg.connect((leader1 + 3) % servers)
-		
+
 		// leader1 & leader1 + 4 are disconnected at this point
 		cfg.one(leader2, 10+index, servers-2, true)
 		index++
@@ -624,7 +626,7 @@ func TestPersist23C(t *testing.T) {
 func TestPersist33C(t *testing.T) {
 	const (
 		servers = 3
-		leader = 0
+		leader  = 0
 	)
 	cfg := make_config(t, servers, false, interferes1)
 	defer cfg.cleanup()
@@ -640,12 +642,12 @@ func TestPersist33C(t *testing.T) {
 	cfg.crash1((leader + 0) % servers)
 	cfg.crash1((leader + 1) % servers)
 	cfg.connect((leader + 2) % servers)
-	cfg.start1((leader + 0) % servers, cfg.applier)
+	cfg.start1((leader+0)%servers, cfg.applier)
 	cfg.connect((leader + 0) % servers)
 
 	cfg.one(leader, 103, servers-1, true)
 
-	cfg.start1((leader + 1) % servers, cfg.applier)
+	cfg.start1((leader+1)%servers, cfg.applier)
 	cfg.connect((leader + 1) % servers)
 
 	cfg.one(leader, 104, servers, true)
@@ -714,7 +716,6 @@ func TestFigure83C(t *testing.T) {
 	cfg.end()
 }
 
-
 func TestUnreliableAgree3C(t *testing.T) {
 	const (
 		servers = 5
@@ -732,8 +733,8 @@ func TestUnreliableAgree3C(t *testing.T) {
 			wg.Add(1)
 			go func(iters, j int) {
 				defer wg.Done()
-				cfg.one(leader1, (100 * iters) + j, 1, true)
-			} (iters, j)
+				cfg.one(leader1, (100*iters)+j, 1, true)
+			}(iters, j)
 		}
 		cfg.one(leader1, iters, 1, true)
 	}
@@ -780,8 +781,8 @@ func TestFigure8Unreliable3C(t *testing.T) {
 			ms := (rand.Int63() % 13)
 			time.Sleep(time.Duration(ms) * time.Millisecond)
 		}
-		
-		if leader != -1 && (rand.Int() % 1000) < 500 {
+
+		if leader != -1 && (rand.Int()%1000) < 500 {
 			cfg.disconnect(leader)
 			nup -= 1
 		}
@@ -828,7 +829,7 @@ func internalChurn(t *testing.T, unreliable bool) {
 		defer func() { ch <- ret }()
 		values := []int{}
 		for atomic.LoadInt32(&stop) == 0 {
-			x := rand.Int() 
+			x := rand.Int()
 			index := LogIndex{}
 			ok := false
 			for i := 0; i < servers; i++ {
@@ -917,7 +918,7 @@ func internalChurn(t *testing.T, unreliable bool) {
 	time.Sleep(1000 * time.Millisecond)
 
 	lastIndex := cfg.one(leader1, 100, servers, true)
-	really := make([]int, lastIndex.Index + 1)
+	really := make([]int, lastIndex.Index+1)
 	for index := 1; index <= lastIndex.Index; index++ {
 		v := cfg.wait(LogIndex{Replica: lastIndex.Replica, Index: index}, servers)
 		if vi, ok := v.(int); ok {
@@ -949,4 +950,3 @@ func TestReliableChurn3C(t *testing.T) {
 func TestUnreliableChurn3C(t *testing.T) {
 	internalChurn(t, true)
 }
-

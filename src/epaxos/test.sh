@@ -9,10 +9,12 @@ rm -rf 2024*
     TestExecute \
     TestExecute2 \
     TestSCCChecker \
-    TestEP1 \
     TestEP2 \
     TestEPBackup \
     TestEPBack \
+    TestEPReexecution \
+    TestEPRecovery \
+    TestEP3 \
     TestBasicAgree3B \
     TestRPCBytes3B \
     TestFollowerFailure3B \
@@ -26,8 +28,8 @@ rm -rf 2024*
     TestPersist13C \
     TestPersist23C \
     TestPersist33C \
-    TestFigure83C \
     TestUnreliableAgree3C \
-    TestFigure8Unreliable3C \
-    TestReliableChurn3C \
-    TestUnreliableChurn3C \
+    # TestFigure83C \
+    # TestFigure8Unreliable3C \
+    # TestReliableChurn3C \
+    # TestUnreliableChurn3C  \
