@@ -85,6 +85,13 @@ func (e *EPaxos) execDFs(replica int, curr int, disc [][]int, low [][]int, stack
 
 		}
 		less := func(i, j int) bool {
+			if sorted[i].Seq == sorted[j].Seq {
+				if sorted[i].Position.Replica == sorted[j].Position.Replica {
+					return sorted[i].Position.Index < sorted[j].Position.Index
+				}
+				return sorted[i].Position.Replica < sorted[j].Position.Replica
+			}
+
 			return sorted[i].Seq < sorted[j].Seq
 		}
 		sort.Slice(sorted, less)

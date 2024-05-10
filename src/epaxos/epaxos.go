@@ -292,8 +292,6 @@ func (e *EPaxos) commitPhase(pos LogIndex) {
 
 	// broadcast and asynchronously wait to commit to other peers
 	_ = e.broadcastCommit(instanceCopy)
-
-	return
 }
 
 func (e *EPaxos) processRequest(cmd interface{}, ix LogIndex, nofast bool) {

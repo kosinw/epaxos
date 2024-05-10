@@ -180,6 +180,8 @@ func (kv *KVServer) processCommand(msg *epaxos.Instance) {
 		return
 	}
 
+	kv.debug(topicError, "%v", msg.Position)
+
 	cmd := msg.Command.(Command)
 
 	// If we have already seen the sequence number, just skip it
@@ -275,6 +277,10 @@ func StartKVServer(servers []*labrpc.ClientEnd, me int, persister *epaxos.Persis
 	kv.persister = persister
 	kv.applyCh = make(chan epaxos.Instance)
 	kv.applyIndex = make([]int, len(servers))
+
+	for i := 0; i < len(kv.applyIndex); i++ {
+		kv.applyIndex[i] = -1
+	}
 
 	// You may need initialization code here (4A).
 	kv.kvs = make(map[string]string)
