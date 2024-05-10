@@ -63,6 +63,7 @@ type Config interface {
 	Leader() (bool, int)
 	make_partition() ([]int, []int)
 	begin(description string)
+	configureWideArea()
 	op()
 	getOps() int32
 	end()

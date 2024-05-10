@@ -95,6 +95,10 @@ func ThroughputBenchmark(t *testing.T, part string, fname string, contention int
 	pathname := path.Join(dirname, fname)
 	f, _ := os.OpenFile(pathname, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
 
+	if wide_area {
+		cfg.configureWideArea()
+	}
+
 	defer cfg.cleanup()
 
 	cfg.begin(fmt.Sprintf("Bench: %s throughput", part))

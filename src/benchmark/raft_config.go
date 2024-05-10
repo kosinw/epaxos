@@ -386,6 +386,52 @@ func (cfg *raftConfig) getOps() int32 {
 	return cfg.ops
 }
 
+// Based on https://www.usenix.org/system/files/nsdi21-tollman.pdf
+func (cfg *raftConfig) configureWideArea() {
+	// In a five replica scheme:
+	// 0 = JP
+	// 1 = OR
+	// 2 = CA
+	// 3 = VA
+	// 4 = EU
+	const (
+		JP = 0
+		OR
+		CA
+		VA
+		EU
+	)
+
+	if len(cfg.kvservers) != 5 {
+		return
+	}
+
+	cfg.net.AddExtraDelay(cfg.endnames[JP], EU, 221*time.Millisecond)
+	cfg.net.AddExtraDelay(cfg.endnames[JP], OR, 91*time.Millisecond)
+	cfg.net.AddExtraDelay(cfg.endnames[JP], VA, 146*time.Millisecond)
+	cfg.net.AddExtraDelay(cfg.endnames[JP], CA, 98*time.Millisecond)
+
+	cfg.net.AddExtraDelay(cfg.endnames[EU], JP, 221*time.Millisecond)
+	cfg.net.AddExtraDelay(cfg.endnames[EU], VA, 77*time.Millisecond)
+	cfg.net.AddExtraDelay(cfg.endnames[EU], CA, 137*time.Millisecond)
+	cfg.net.AddExtraDelay(cfg.endnames[EU], OR, 59*time.Millisecond)
+
+	cfg.net.AddExtraDelay(cfg.endnames[OR], JP, 91*time.Millisecond)
+	cfg.net.AddExtraDelay(cfg.endnames[OR], CA, 26*time.Millisecond)
+	cfg.net.AddExtraDelay(cfg.endnames[OR], VA, 59*time.Millisecond)
+	cfg.net.AddExtraDelay(cfg.endnames[OR], EU, 129*time.Millisecond)
+
+	cfg.net.AddExtraDelay(cfg.endnames[VA], JP, 146*time.Millisecond)
+	cfg.net.AddExtraDelay(cfg.endnames[VA], OR, 59*time.Millisecond)
+	cfg.net.AddExtraDelay(cfg.endnames[VA], CA, 64*time.Millisecond)
+	cfg.net.AddExtraDelay(cfg.endnames[VA], EU, 77*time.Millisecond)
+
+	cfg.net.AddExtraDelay(cfg.endnames[CA], JP, 98*time.Millisecond)
+	cfg.net.AddExtraDelay(cfg.endnames[CA], VA, 64*time.Millisecond)
+	cfg.net.AddExtraDelay(cfg.endnames[CA], OR, 25*time.Millisecond)
+	cfg.net.AddExtraDelay(cfg.endnames[CA], EU, 137*time.Millisecond)
+}
+
 // end a Test -- the fact that we got here means there
 // was no failure.
 // print the Passed message,
