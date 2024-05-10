@@ -41,14 +41,13 @@ func (log *OpLog) Read() []porcupine.Operation {
 	return ops
 }
 
-
 func logOperation(operation string, start int64, end int64) {
 	file, _ := os.OpenFile("latency.log", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
-    latency := end - start
-    _, err := file.WriteString(fmt.Sprintf("%s: Start: %d, End: %d, Latency: %d µs\n", operation, start, end, latency))
-    if err != nil {
-        fmt.Println("Error writing to file:", err)
-    }
+	latency := end - start
+	_, err := file.WriteString(fmt.Sprintf("%s: Start: %d, End: %d, Latency: %d µs\n", operation, start, end, latency))
+	if err != nil {
+		fmt.Println("Error writing to file:", err)
+	}
 }
 
 // to make sure timestamps use the monotonic clock, instead of computing
