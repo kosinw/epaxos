@@ -149,11 +149,8 @@ func (e *EPaxos) broadcastPrepare(position LogIndex, newBallot Ballot) (abort bo
 			instance := e.log[position.Replica][position.Index]
 			e.debug(topicPrepare, "%v committing %v: commit path\n", e.me, position)
 			//fmt.Printf("%v committing %v: commit path\n", e.me, position)
-
-			instanceCopy := instance
-			instanceCopy.Deps = copyMap(instanceCopy.Deps)
 			e.lock.Unlock()
-			_ = e.broadcastCommit(instanceCopy)
+			_ = e.broadcastCommit(instance)
 			e.debug(topicPrepare, "%v committed %v: commit path\n", e.me, position)
 		} else if len(accepts) > 0 {
 			// if (accepts[0].Command == -1){
@@ -166,14 +163,11 @@ func (e *EPaxos) broadcastPrepare(position LogIndex, newBallot Ballot) (abort bo
 			e.log[position.Replica][position.Index].Command = accepts[0].Command
 			e.log[position.Replica][position.Index].Valid = true
 			instance := e.log[position.Replica][position.Index]
-			instanceCopy := instance
-			instanceCopy.Deps = copyMap(instanceCopy.Deps)
 			e.lock.Unlock()
 			e.debug(topicPrepare, "%v accepting %v: commit path\n", e.me, position)
-
-			abort = e.broadcastAccept(instanceCopy)
+			abort = e.broadcastAccept(instance)
 			if !abort {
-				_ = e.broadcastCommit(instanceCopy)
+				_ = e.broadcastCommit(instance)
 				e.debug(topicPrepare, "%v committed %v: commit path\n", e.me, position)
 			}
 		} else if len(preaccepts) >= majority && !originalAccept {
@@ -194,13 +188,10 @@ func (e *EPaxos) broadcastPrepare(position LogIndex, newBallot Ballot) (abort bo
 				// 	fmt.Println("bad accept")
 				// }
 				instance := e.log[position.Replica][position.Index]
-				instanceCopy := instance
-				instanceCopy.Deps = copyMap(instanceCopy.Deps)
 				e.lock.Unlock()
-
-				abort = e.broadcastAccept(instanceCopy)
+				abort = e.broadcastAccept(instance)
 				if !abort {
-					_ = e.broadcastCommit(instanceCopy)
+					_ = e.broadcastCommit(instance)
 				}
 			} else {
 				// if (preaccepts[0].Command == -1){
