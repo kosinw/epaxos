@@ -140,13 +140,13 @@ func (e *EPaxos) scc(n int) bool {
 			disc[R][i] = -1
 			parents[R][i] = Instance{}
 
-			if e.log[R][i].Deps == nil {
-				e.log[R][i].Deps = map[LogIndex]int{}
-			}
+			// if e.log[R][i].Deps == nil {
+			// 	e.log[R][i].Deps = map[LogIndex]int{}
+			// }
 
-			if i > 0 {
-				e.log[R][i].Deps[LogIndex{Replica: R, Index: i}] = 1
-			}
+			// if i > 0 {
+			// 	e.log[R][i].Deps[LogIndex{Replica: R, Index: i}] = 1
+			// }
 		}
 
 	}

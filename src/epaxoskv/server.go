@@ -31,11 +31,12 @@ type KVServer struct {
 	me         int
 	Ep         *epaxos.EPaxos
 	applyCh    chan epaxos.Instance
-	dead       int32               // set by Kill()
-	persister  *epaxos.Persister   // Object to hold this server's persisted state
-	kvs        map[string]string   // k/v store which holds data for the service
-	duplicates map[string]SeqValue // client ID -> (seq, value) table for duplicate detection
-	applyIndex []int               // log index of most recently applied operation
+	dead       int32                   // set by Kill()
+	persister  *epaxos.Persister       // Object to hold this server's persisted state
+	kvs        map[string]string       // k/v store which holds data for the service
+	duplicates map[string]SeqValue     // client ID -> (seq, value) table for duplicate detection
+	applyIndex []int                   // log index of most recently applied operation
+	applied    map[epaxos.LogIndex]int // set of already applied operations
 }
 
 // RPC Handler for Get.
@@ -66,9 +67,14 @@ func (kv *KVServer) Get(args *GetArgs, reply *GetReply) {
 
 	// We sleep on this goroutine until the applyIndex has not
 	// yet reached this operation.
-	for kv.applyIndex[logIndex.Replica] < logIndex.Index {
+	t0 := time.Now()
+	for time.Since(t0) < 4*time.Second {
 		if kv.killed() { // this server has been killed
 			return
+		}
+
+		if _, ok := kv.applied[logIndex]; ok {
+			break
 		}
 
 		kv.lock.Unlock()
@@ -123,9 +129,14 @@ func (kv *KVServer) PutAppend(args *PutAppendArgs, reply *PutAppendReply) {
 	kv.debug(topicInfo, "Running %v(%v, '%v') for %v #%v", args.Op, args.Key, args.Value, args.ClerkId[0:5], args.SeqNum)
 
 	// We sleep on this goroutine until the applyIndex has caught up.
-	for kv.applyIndex[logIndex.Replica] < logIndex.Index {
+	t0 := time.Now()
+	for time.Since(t0) < 4*time.Second {
 		if kv.killed() {
 			return
+		}
+
+		if _, ok := kv.applied[logIndex]; ok {
+			break
 		}
 
 		// Wait like 10ms between checking
@@ -175,6 +186,7 @@ func (kv *KVServer) processCommand(msg *epaxos.Instance) {
 		if msg.Position.Index > kv.applyIndex[msg.Position.Replica] {
 			kv.debug(topicService, "Updating applyIndex[%v]: %v -> %v", msg.Position.Replica, kv.applyIndex[msg.Position.Replica], msg.Position.Index)
 			kv.applyIndex[msg.Position.Replica] = msg.Position.Index
+			kv.applied[msg.Position] = 1
 		}
 
 		return
@@ -188,6 +200,7 @@ func (kv *KVServer) processCommand(msg *epaxos.Instance) {
 		kv.debug(topicService, "Updating applyIndex[%v]: %v -> %v", msg.Position.Replica, kv.applyIndex[msg.Position.Replica], msg.Position.Index)
 		if msg.Position.Index > kv.applyIndex[msg.Position.Replica] {
 			kv.applyIndex[msg.Position.Replica] = msg.Position.Index
+			kv.applied[msg.Position] = 1
 		}
 		return
 	}
@@ -208,6 +221,7 @@ func (kv *KVServer) processCommand(msg *epaxos.Instance) {
 		kv.debug(topicService, "Updating applyIndex[%v]: %v -> %v", msg.Position.Replica, kv.applyIndex[msg.Position.Replica], msg.Position.Index)
 		kv.applyIndex[msg.Position.Replica] = msg.Position.Index
 		kv.duplicates[cmd.ClerkId] = SeqValue{SeqNum: cmd.SeqNum, Value: kv.kvs[cmd.Key]}
+		kv.applied[msg.Position] = 1
 	}
 }
 
@@ -275,6 +289,7 @@ func StartKVServer(servers []*labrpc.ClientEnd, me int, persister *epaxos.Persis
 	kv.persister = persister
 	kv.applyCh = make(chan epaxos.Instance)
 	kv.applyIndex = make([]int, len(servers))
+	kv.applied = map[epaxos.LogIndex]int{}
 
 	for i := 0; i < len(kv.applyIndex); i++ {
 		kv.applyIndex[i] = -1

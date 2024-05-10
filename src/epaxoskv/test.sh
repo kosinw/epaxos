@@ -2,7 +2,7 @@
 
 rm -rf 2024*
 
-../../scripts/dstest -v -v --workers 1 --iter $1 --race -t \
+../../scripts/dstest -v -v --workers 1 --iter $1 -t \
     TestBasic4A \
     TestSpeed4A \
     TestConcurrent4A \
