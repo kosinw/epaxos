@@ -360,6 +360,10 @@ func (cfg *epaxosConfig) op() {
 	atomic.AddInt32(&cfg.ops, 1)
 }
 
+func (cfg *epaxosConfig) getOps() int32 {
+	return cfg.ops
+}
+
 // end a Test -- the fact that we got here means there
 // was no failure.
 // print the Passed message,

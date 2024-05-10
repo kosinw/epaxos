@@ -3,6 +3,8 @@ package benchmark
 import (
 	"fmt"
 	"os"
+	"path"
+	"strconv"
 	"testing"
 	"time"
 )
@@ -12,19 +14,26 @@ import (
 // clock), we measure time relative to `t0` using `time.Since(t0)`, which uses
 // the monotonic clock
 var t0 = time.Now()
+var dirname string
 
 func setup() {
+	// generate directory name through a timestamp
+	dirname = "bench-" + time.Now().Format("2006-01-02_15-04-05")
 
+	err := os.Mkdir(dirname, 0755)
+
+	if err != nil {
+		fmt.Println("Error creating directory:", err)
+		return
+	}
 }
 
-// func logOperation(operation string, start int64, end int64) {
-// 	file, _ := os.OpenFile("latency.log", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
-// 	latency := end - start
-// 	_, err := file.WriteString(fmt.Sprintf("%s: start: %d, end: %d, latency: %d\n", operation, start, end, latency))
-// 	if err != nil {
-// 		fmt.Println("Error writing to file:", err)
-// 	}
-// }
+func log(file *os.File, datapoint int) {
+	_, err := file.WriteString(fmt.Sprintf("%v\n", datapoint))
+	if err != nil {
+		fmt.Println("Error writing to file:", err)
+	}
+}
 
 // get/put/putappend that keep counts
 func Get(cfg Config, ck Clerk, key string, cli int) string {
@@ -81,20 +90,51 @@ type makeConfigFn func(t *testing.T, n int, unreliable bool) Config
 
 func BasicThroughputBenchmark(t *testing.T, part string, fname string, contention float64, nservers int, nclients int, make_config makeConfigFn) {
 	cfg := make_config(t, nservers, false)
-	defer cfg.cleanup()
+	o0 := cfg.getOps()
+	pathname := path.Join(dirname, fname)
+	f, _ := os.OpenFile(pathname, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
 
-	// ck := cfg.makeClient(cfg.All())
+	defer cfg.cleanup()
 
 	cfg.begin(fmt.Sprintf("Bench: %s basic latency benchmark", part))
 
-	// Spawn goroutine that samples throughput every tenth of a second
+	// Spawn goroutine that samples throughput every second
+	killed1 := make(chan struct{})
+	killed2 := make(chan struct{})
+
+	go spawn_clients_and_wait(t, cfg, nclients, func(me int, ck Clerk, t *testing.T) {
+		i := 0
+		for {
+			select {
+			case <-killed1:
+				return
+			default:
+			}
+
+			Append(cfg, ck, "k", "x "+strconv.Itoa(me)+" "+strconv.Itoa(i)+" y", me)
+			i++
+		}
+	})
+
 	go func() {
-		time.Sleep(100 * time.Millisecond)
+		for {
+			select {
+			case <-killed2:
+				return
+			default:
+				time.Sleep(1 * time.Second)
+				o1 := cfg.getOps()
+				tput := (o1 - o0)
+				o0 = o1
+				log(f, int(tput))
+			}
+		}
 	}()
 
-	// Wait for 30 seconds
-	time.Sleep(30 * time.Second)
-
+	// Wait for 1 minute
+	time.Sleep(1 * time.Minute)
+	killed1 <- struct{}{}
+	killed2 <- struct{}{}
 	cfg.end()
 }
 

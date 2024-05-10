@@ -382,6 +382,10 @@ func (cfg *raftConfig) op() {
 	atomic.AddInt32(&cfg.ops, 1)
 }
 
+func (cfg *raftConfig) getOps() int32 {
+	return cfg.ops
+}
+
 // end a Test -- the fact that we got here means there
 // was no failure.
 // print the Passed message,

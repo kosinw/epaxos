@@ -64,5 +64,6 @@ type Config interface {
 	make_partition() ([]int, []int)
 	begin(description string)
 	op()
+	getOps() int32
 	end()
 }
