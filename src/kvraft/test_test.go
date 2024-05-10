@@ -72,7 +72,7 @@ func Get(cfg *config, ck *Clerk, key string, log *OpLog, cli int) string {
 			ClientId: cli,
 		})
 	}
-	logOperation("GET", start, end)
+	// logOperation("GET", start, end)
 	return v
 }
 
@@ -90,7 +90,7 @@ func Put(cfg *config, ck *Clerk, key string, value string, log *OpLog, cli int) 
 			ClientId: cli,
 		})
 	}
-	logOperation("PUT", start, end)
+	// logOperation("PUT", start, end)
 }
 
 func Append(cfg *config, ck *Clerk, key string, value string, log *OpLog, cli int) {
@@ -107,7 +107,7 @@ func Append(cfg *config, ck *Clerk, key string, value string, log *OpLog, cli in
 			ClientId: cli,
 		})
 	}
-	logOperation("APPEND", start, end)
+	// logOperation("APPEND", start, end)
 }
 
 func check(cfg *config, t *testing.T, ck *Clerk, key string, value string) {
