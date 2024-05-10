@@ -2,6 +2,7 @@ package benchmark
 
 import (
 	"fmt"
+	"os"
 	"strconv"
 	"testing"
 	"time"
@@ -12,6 +13,20 @@ import (
 // clock), we measure time relative to `t0` using `time.Since(t0)`, which uses
 // the monotonic clock
 var t0 = time.Now()
+
+var file *os.File
+
+func setup() {
+	file, _ = os.OpenFile("latency.log", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+}
+
+func logOperation(operation string, start int64, end int64) {
+	latency := end - start
+	_, err := file.WriteString(fmt.Sprintf("%s: start: %d, end: %d, latency: %d\n", operation, start, end, latency))
+	if err != nil {
+		fmt.Println("Error writing to file:", err)
+	}
+}
 
 // get/put/putappend that keep counts
 func Get(cfg Config, ck Clerk, key string, cli int) string {
@@ -69,6 +84,12 @@ func spawn_clients_and_wait(t *testing.T, cfg Config, ncli int, fn func(me int, 
 			t.Fatalf("failure")
 		}
 	}
+}
+
+func TestMain(m *testing.M) {
+	setup()
+	code := m.Run()
+	os.Exit(code)
 }
 
 type makeConfigFn func(t *testing.T, n int, unreliable bool) Config
