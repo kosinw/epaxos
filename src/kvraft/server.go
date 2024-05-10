@@ -30,7 +30,7 @@ type SeqValue struct {
 type KVServer struct {
 	lock      sync.Mutex
 	me        int
-	rf        *raft.Raft
+	Rf        *raft.Raft
 	applyCh   chan raft.ApplyMsg
 	dead      int32           // set by Kill()
 	persister *raft.Persister // Object to hold this server's persisted state
@@ -64,7 +64,7 @@ func (kv *KVServer) Get(args *GetArgs, reply *GetReply) {
 	// that to our Raft instance.
 	cmd := Command{Op: OpGet, Key: args.Key, ClerkId: args.ClerkId, SeqNum: args.SeqNum}
 
-	logIndex, startTerm, isLeader := kv.rf.Start(cmd)
+	logIndex, startTerm, isLeader := kv.Rf.Start(cmd)
 
 	// If we are not the leader just respond to the RPC already
 	// with a WrongLeader error.
@@ -84,7 +84,7 @@ func (kv *KVServer) Get(args *GetArgs, reply *GetReply) {
 		}
 
 		// Have we been deposed?
-		term, stillLeader := kv.rf.GetState()
+		term, stillLeader := kv.Rf.GetState()
 
 		if term > startTerm || !stillLeader {
 			reply.Err = ErrWrongLeader
@@ -141,7 +141,7 @@ func (kv *KVServer) PutAppend(args *PutAppendArgs, reply *PutAppendReply) {
 		SeqNum:  args.SeqNum,
 	}
 
-	logIndex, startTerm, isLeader := kv.rf.Start(cmd)
+	logIndex, startTerm, isLeader := kv.Rf.Start(cmd)
 
 	// If we are not the leader just respond to the RPC already
 	// with a WrongLeader error.
@@ -160,7 +160,7 @@ func (kv *KVServer) PutAppend(args *PutAppendArgs, reply *PutAppendReply) {
 		}
 
 		// Have we been deposed?
-		term, stillLeader := kv.rf.GetState()
+		term, stillLeader := kv.Rf.GetState()
 
 		if term > startTerm || !stillLeader {
 			reply.Err = ErrWrongLeader
@@ -195,7 +195,7 @@ func (kv *KVServer) PutAppend(args *PutAppendArgs, reply *PutAppendReply) {
 // to suppress debug output from a Kill()ed instance.
 func (kv *KVServer) Kill() {
 	atomic.StoreInt32(&kv.dead, 1)
-	kv.rf.Kill()
+	kv.Rf.Kill()
 	kv.debug(topicInfo, "Exiting...")
 	disableLogging()
 	// Your code here, if desired.
@@ -255,7 +255,7 @@ func (kv *KVServer) processCommand(msg *raft.ApplyMsg) {
 			snapshot := kv.marshall()
 
 			// Send snapshot to Raft.
-			kv.rf.Snapshot(msg.CommandIndex, snapshot)
+			kv.Rf.Snapshot(msg.CommandIndex, snapshot)
 		}
 	}
 }
@@ -416,7 +416,7 @@ func StartKVServer(servers []*labrpc.ClientEnd, me int, persister *raft.Persiste
 	// Unmarshall state from a snapshot (4B).
 	kv.unmarshall(persister.ReadSnapshot())
 
-	kv.rf = raft.Make(servers, me, persister, kv.applyCh)
+	kv.Rf = raft.Make(servers, me, persister, kv.applyCh)
 	kv.debug(topicService, "Starting with AI: %v", kv.applyIndex)
 
 	// Spawn goroutine to apply commands from Raft.

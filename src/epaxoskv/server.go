@@ -29,7 +29,7 @@ type SeqValue struct {
 type KVServer struct {
 	lock       sync.Mutex
 	me         int
-	ep         *epaxos.EPaxos
+	Ep         *epaxos.EPaxos
 	applyCh    chan epaxos.Instance
 	dead       int32               // set by Kill()
 	persister  *epaxos.Persister   // Object to hold this server's persisted state
@@ -60,7 +60,7 @@ func (kv *KVServer) Get(args *GetArgs, reply *GetReply) {
 	// that to our EPaxos instance.
 	cmd := Command{Op: OpGet, Key: args.Key, ClerkId: args.ClerkId, SeqNum: args.SeqNum}
 
-	logIndex := kv.ep.Start(cmd)
+	logIndex := kv.Ep.Start(cmd)
 
 	kv.debug(topicInfo, "Running GET(%v) for %v #%v", args.Key, args.ClerkId[0:5], args.SeqNum)
 
@@ -118,7 +118,7 @@ func (kv *KVServer) PutAppend(args *PutAppendArgs, reply *PutAppendReply) {
 		SeqNum:  args.SeqNum,
 	}
 
-	logIndex := kv.ep.Start(cmd)
+	logIndex := kv.Ep.Start(cmd)
 
 	kv.debug(topicInfo, "Running %v(%v, '%v') for %v #%v", args.Op, args.Key, args.Value, args.ClerkId[0:5], args.SeqNum)
 
@@ -153,7 +153,7 @@ func (kv *KVServer) PutAppend(args *PutAppendArgs, reply *PutAppendReply) {
 // to suppress debug output from a Kill()ed instance.
 func (kv *KVServer) Kill() {
 	atomic.StoreInt32(&kv.dead, 1)
-	kv.ep.Kill()
+	kv.Ep.Kill()
 	kv.debug(topicInfo, "Exiting...")
 	disableLogging()
 	// Your code here, if desired.
@@ -280,7 +280,7 @@ func StartKVServer(servers []*labrpc.ClientEnd, me int, persister *epaxos.Persis
 	kv.kvs = make(map[string]string)
 	kv.duplicates = make(map[string]SeqValue)
 
-	kv.ep = epaxos.Make(servers, me, persister, kv.applyCh, interferes)
+	kv.Ep = epaxos.Make(servers, me, persister, kv.applyCh, interferes)
 	kv.debug(topicService, "Starting with applyIndex: %v", kv.applyIndex)
 
 	// Spawn goroutine to apply commands from EPaxos.

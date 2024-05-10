@@ -1,20 +1,24 @@
 package epaxoskv
 
-import "6.5840/labrpc"
-import "testing"
-import "os"
+import (
+	"os"
+	"testing"
 
-// import "log"
-import crand "crypto/rand"
-import "math/big"
-import "math/rand"
-import "encoding/base64"
-import "sync"
-import "runtime"
-import "fmt"
-import "time"
-import "sync/atomic"
-import "6.5840/epaxos"
+	"6.5840/labrpc"
+
+	// import "log"
+	crand "crypto/rand"
+	"encoding/base64"
+	"fmt"
+	"math/big"
+	"math/rand"
+	"runtime"
+	"sync"
+	"sync/atomic"
+	"time"
+
+	"6.5840/epaxos"
+)
 
 func randstring(n int) string {
 	b := make([]byte, 2*n)
@@ -314,7 +318,7 @@ func (cfg *config) StartServer(i int) {
 	cfg.kvservers[i] = StartKVServer(ends, i, cfg.saved[i])
 
 	kvsvc := labrpc.MakeService(cfg.kvservers[i])
-	rfsvc := labrpc.MakeService(cfg.kvservers[i].ep)
+	rfsvc := labrpc.MakeService(cfg.kvservers[i].Ep)
 	srv := labrpc.MakeServer()
 	srv.AddService(kvsvc)
 	srv.AddService(rfsvc)
