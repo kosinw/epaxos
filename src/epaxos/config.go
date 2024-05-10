@@ -485,7 +485,7 @@ func (cfg *config) one(peer int, cmd interface{}, expectedServers int, retry boo
 	t0 := time.Now()
 	index := LogIndex{-1, -1}
 
-	for time.Since(t0).Seconds() < 100 && cfg.checkFinished() == false {
+	for time.Since(t0).Seconds() < 30 && cfg.checkFinished() == false {
 		cfg.mu.Lock()
 		if !cfg.connected[peer] {
 			cfg.mu.Unlock()
