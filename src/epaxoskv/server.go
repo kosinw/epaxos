@@ -180,8 +180,6 @@ func (kv *KVServer) processCommand(msg *epaxos.Instance) {
 		return
 	}
 
-	kv.debug(topicError, "%v", msg.Position)
-
 	cmd := msg.Command.(Command)
 
 	// If we have already seen the sequence number, just skip it
