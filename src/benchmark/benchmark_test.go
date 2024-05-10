@@ -3,7 +3,6 @@ package benchmark
 import (
 	"fmt"
 	"os"
-	"strconv"
 	"testing"
 	"time"
 )
@@ -14,49 +13,35 @@ import (
 // the monotonic clock
 var t0 = time.Now()
 
-var file *os.File
-
 func setup() {
-	file, _ = os.OpenFile("latency.log", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+
 }
 
-func logOperation(operation string, start int64, end int64) {
-	latency := end - start
-	_, err := file.WriteString(fmt.Sprintf("%s: start: %d, end: %d, latency: %d\n", operation, start, end, latency))
-	if err != nil {
-		fmt.Println("Error writing to file:", err)
-	}
-}
+// func logOperation(operation string, start int64, end int64) {
+// 	file, _ := os.OpenFile("latency.log", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+// 	latency := end - start
+// 	_, err := file.WriteString(fmt.Sprintf("%s: start: %d, end: %d, latency: %d\n", operation, start, end, latency))
+// 	if err != nil {
+// 		fmt.Println("Error writing to file:", err)
+// 	}
+// }
 
 // get/put/putappend that keep counts
 func Get(cfg Config, ck Clerk, key string, cli int) string {
-	// start := int64(time.Since(t0))
 	v := ck.Get(key)
-	// end := int64(time.Since(t0))
 	cfg.op()
 
 	return v
 }
 
 func Put(cfg Config, ck Clerk, key string, value string, cli int) {
-	// start := int64(time.Since(t0))
 	ck.Put(key, value)
-	// end := int64(time.Since(t0))
 	cfg.op()
 }
 
 func Append(cfg Config, ck Clerk, key string, value string, cli int) {
-	// start := int64(time.Since(t0))
 	ck.Append(key, value)
-	// end := int64(time.Since(t0))
 	cfg.op()
-}
-
-func check(cfg Config, t *testing.T, ck Clerk, key string, value string) {
-	v := Get(cfg, ck, key, -1)
-	if v != value {
-		t.Fatalf("Get(%v): expected:\n%v\nreceived:\n%v", key, value, v)
-	}
 }
 
 // a client runs the function f and then signals it is done
@@ -94,45 +79,41 @@ func TestMain(m *testing.M) {
 
 type makeConfigFn func(t *testing.T, n int, unreliable bool) Config
 
-func BasicLatencyBenchmark(t *testing.T, part string, make_config makeConfigFn) {
-	const nservers = 3
-	const numOps = 1000
+func BasicThroughputBenchmark(t *testing.T, part string, fname string, contention float64, nservers int, nclients int, make_config makeConfigFn) {
 	cfg := make_config(t, nservers, false)
 	defer cfg.cleanup()
 
-	ck := cfg.makeClient(cfg.All())
+	// ck := cfg.makeClient(cfg.All())
 
 	cfg.begin(fmt.Sprintf("Bench: %s basic latency benchmark", part))
 
-	// // wait until first op completes, so we know a leader is elected
-	// // and KV servers are ready to process client requests
-	ck.Get("x")
+	// Spawn goroutine that samples throughput every tenth of a second
+	go func() {
+		time.Sleep(100 * time.Millisecond)
+	}()
 
-	start := time.Now()
-	for i := 0; i < numOps; i++ {
-		ck.Append("x", "x 0 "+strconv.Itoa(i)+" y")
-	}
-	dur := time.Since(start)
-
-	// v := ck.Get("x")
-	ck.Get("x")
-	// checkClntAppends(t, 0, v, numOps)
-
-	// heartbeat interval should be ~ 100 ms; require at least 3 ops per
-	const heartbeatInterval = 100 * time.Millisecond
-	const opsPerInterval = 3
-	const timePerOp = heartbeatInterval / opsPerInterval
-	if dur > numOps*timePerOp {
-		t.Fatalf("Operations completed too slowly %v/op > %v/op\n", dur/numOps, timePerOp)
-	}
+	// Wait for 30 seconds
+	time.Sleep(30 * time.Second)
 
 	cfg.end()
 }
 
-func TestRaftBasicLatencyBenchmark(t *testing.T) {
-	BasicLatencyBenchmark(t, "raft", make_raft_config)
+func TestRaftBasicThroughputBenchmark(t *testing.T) {
+	BasicThroughputBenchmark(t, "raft, 5 clients", "raft_tput", 0.0, 5, 5, make_raft_config)
 }
 
-func TestEPaxosBasicLatencyBenchmark(t *testing.T) {
-	BasicLatencyBenchmark(t, "epaxos (100%)", make_epaxos_config)
+func TestEPaxos0BasicThroughputBenchmark(t *testing.T) {
+	BasicThroughputBenchmark(t, "epaxos (0%), 5 clients", "epaxos_0_tput", 0.0, 5, 5, make_epaxos_config)
+}
+
+func TestEPaxos20BasicThroughputBenchmark(t *testing.T) {
+	BasicThroughputBenchmark(t, "epaxos (20%), 5 clients", "epaxos_20_tput", 0.2, 5, 5, make_epaxos_config)
+}
+
+func TestEPaxosBasic50ThroughputBenchmark(t *testing.T) {
+	BasicThroughputBenchmark(t, "epaxos (50%), 5 clients", "epaxos_50_tput", 0.5, 5, 5, make_epaxos_config)
+}
+
+func TestEPaxosBasic100ThroughputBenchmark(t *testing.T) {
+	BasicThroughputBenchmark(t, "epaxos (100%), 5 clients", "epaxos_100_tput", 1, 5, 5, make_epaxos_config)
 }
