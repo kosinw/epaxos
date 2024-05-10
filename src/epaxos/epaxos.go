@@ -101,16 +101,6 @@ func unionMaps(map1, map2 map[LogIndex]int) map[LogIndex]int {
 	return unionMap
 }
 
-func copyMap(map1 map[LogIndex]int) map[LogIndex]int {
-	map2 := map[LogIndex]int{}
-
-	for key, value := range map1 {
-		map2[key] = value
-	}
-
-	return map2
-}
-
 // attributes calculates the sequence number and dependencies for a command at current instance number.
 func (e *EPaxos) attributes(cmd interface{}, ix LogIndex) (seq int, deps map[LogIndex]int) {
 	// find seq num & deps
@@ -204,7 +194,6 @@ func (e *EPaxos) preAcceptPhase(cmd interface{}, ix LogIndex, nofast bool) (comm
 	e.persist()
 
 	instanceCopy := *instance
-	instanceCopy.Deps = copyMap(instanceCopy.Deps)
 
 	e.Unlock()
 
@@ -267,7 +256,6 @@ func (e *EPaxos) acceptPhase(pos LogIndex) (abort bool) {
 	instance.Timer = time.Time{}
 	e.persist()
 	instanceCopy := *instance
-	instanceCopy.Deps = copyMap(instanceCopy.Deps)
 
 	e.debug(topicLog, "Updated %v: %v", pos, *instance)
 
@@ -297,7 +285,6 @@ func (e *EPaxos) commitPhase(pos LogIndex) {
 	instance.Timer = time.Time{}
 	e.persist()
 	instanceCopy := *instance
-	instanceCopy.Deps = copyMap(instanceCopy.Deps)
 
 	e.debug(topicCommit, "Updated %v: %v", pos, *instance)
 
@@ -335,7 +322,7 @@ func (e *EPaxos) broadcastPreAccept(instance Instance, nofast bool) (seq int, de
 	replyCount := 1
 	rejectCount := 0
 	unionSeq := instance.Seq
-	unionDeps := copyMap(instance.Deps)
+	unionDeps := instance.Deps
 	quorum := e.numFastPath()
 	majority := e.numPeers()/2 + 1
 
@@ -343,7 +330,7 @@ func (e *EPaxos) broadcastPreAccept(instance Instance, nofast bool) (seq int, de
 
 	args := PreAcceptArgs{
 		Command:  instance.Command,
-		Deps:     copyMap(instance.Deps),
+		Deps:     instance.Deps,
 		Seq:      instance.Seq,
 		Ballot:   instance.Ballot,
 		Position: instance.Position,
@@ -409,7 +396,7 @@ func (e *EPaxos) broadcastPreAccept(instance Instance, nofast bool) (seq int, de
 	}
 
 	seq = unionSeq
-	deps = copyMap(unionDeps)
+	deps = unionDeps
 
 	return
 }
@@ -438,7 +425,7 @@ func (e *EPaxos) PreAccept(args *PreAcceptArgs, reply *PreAcceptReply) {
 
 	if instance.Valid && instance.Status > PREACCEPTED {
 		e.debug(topicPreAccept, "Instance in a further phase: %v < %v", PREACCEPTED, instance.Status)
-		reply.Deps = copyMap(instance.Deps)
+		reply.Deps = instance.Deps
 		reply.Seq = instance.Seq
 		reply.Success = true
 		return
@@ -463,7 +450,7 @@ func (e *EPaxos) PreAccept(args *PreAcceptArgs, reply *PreAcceptReply) {
 
 	e.debug(topicPreAccept, "Updated %v: %v", args.Position, *instance)
 
-	reply.Deps = copyMap(instance.Deps)
+	reply.Deps = instance.Deps
 	reply.Seq = instance.Seq
 	reply.Success = true
 }

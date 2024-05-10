@@ -139,16 +139,7 @@ func (e *EPaxos) scc(n int) bool {
 		for i := 0; i < len(e.log[R]); i++ {
 			disc[R][i] = -1
 			parents[R][i] = Instance{}
-
-			// if e.log[R][i].Deps == nil {
-			// 	e.log[R][i].Deps = map[LogIndex]int{}
-			// }
-
-			// if i > 0 {
-			// 	e.log[R][i].Deps[LogIndex{Replica: R, Index: i}] = 1
-			// }
 		}
-
 	}
 	executed := false
 	for R := 0; R < n; R++ {
