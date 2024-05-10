@@ -62,11 +62,6 @@ import (
 	"6.5840/labgob"
 )
 
-type serverEndTuple struct {
-	servername interface{}
-	endname    interface{}
-}
-
 type reqMsg struct {
 	endname  interface{} // name of sending ClientEnd
 	svcMeth  string      // e.g. "Raft.AppendEntries"
@@ -136,13 +131,13 @@ func (e *ClientEnd) Call(svcMeth string, args interface{}, reply interface{}) bo
 type Network struct {
 	mu             sync.Mutex
 	reliable       bool
-	longDelays     bool                             // pause a long time on send on disabled connection
-	longReordering bool                             // sometimes delay replies a long time
-	ends           map[interface{}]*ClientEnd       // ends, by name
-	enabled        map[interface{}]bool             // by end name
-	servers        map[interface{}]*Server          // servers, by name
-	connections    map[interface{}]interface{}      // endname -> servername
-	extraDelay     map[serverEndTuple]time.Duration // endname,servername -> duration
+	longDelays     bool                          // pause a long time on send on disabled connection
+	longReordering bool                          // sometimes delay replies a long time
+	ends           map[interface{}]*ClientEnd    // ends, by name
+	enabled        map[interface{}]bool          // by end name
+	servers        map[interface{}]*Server       // servers, by name
+	connections    map[interface{}]interface{}   // endname -> servername
+	extraDelay     map[interface{}]time.Duration // endname,servername -> duration
 	endCh          chan reqMsg
 	done           chan struct{} // closed when Network is cleaned up
 	count          int32         // total RPC count, for statistics
@@ -156,7 +151,7 @@ func MakeNetwork() *Network {
 	rn.enabled = map[interface{}]bool{}
 	rn.servers = map[interface{}]*Server{}
 	rn.connections = map[interface{}](interface{}){}
-	rn.extraDelay = map[serverEndTuple]time.Duration{}
+	rn.extraDelay = map[interface{}]time.Duration{}
 	rn.endCh = make(chan reqMsg)
 	rn.done = make(chan struct{})
 
@@ -195,11 +190,11 @@ func (rn *Network) LongReordering(yes bool) {
 	rn.longReordering = yes
 }
 
-func (rn *Network) AddExtraDelay(endname interface{}, servername interface{}, dur time.Duration) {
+func (rn *Network) AddExtraDelay(endname interface{}, dur time.Duration) {
 	rn.mu.Lock()
 	defer rn.mu.Unlock()
 
-	rn.extraDelay[serverEndTuple{servername: servername, endname: endname}] = dur
+	rn.extraDelay[endname] = dur
 }
 
 func (rn *Network) LongDelays(yes bool) {
@@ -225,11 +220,11 @@ func (rn *Network) readEndnameInfo(endname interface{}) (enabled bool,
 	return
 }
 
-func (rn *Network) getExtraDelay(endname interface{}, servername interface{}) time.Duration {
+func (rn *Network) getExtraDelay(endname interface{}) time.Duration {
 	rn.mu.Lock()
 	defer rn.mu.Unlock()
 
-	if dur, ok := rn.extraDelay[serverEndTuple{endname: endname, servername: servername}]; ok {
+	if dur, ok := rn.extraDelay[endname]; ok {
 		return dur
 	}
 
@@ -249,7 +244,7 @@ func (rn *Network) isServerDead(endname interface{}, servername interface{}, ser
 func (rn *Network) processReq(req reqMsg) {
 	enabled, servername, server, reliable, longreordering := rn.readEndnameInfo(req.endname)
 
-	ms := rn.getExtraDelay(req.endname, servername)
+	ms := rn.getExtraDelay(req.endname)
 
 	if ms > 0 {
 		time.Sleep(ms)
