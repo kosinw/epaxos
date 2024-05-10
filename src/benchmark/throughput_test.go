@@ -2,6 +2,7 @@ package benchmark
 
 import (
 	"fmt"
+	"math/rand"
 	"os"
 	"path"
 	"strconv"
@@ -88,7 +89,7 @@ func TestMain(m *testing.M) {
 
 type makeConfigFn func(t *testing.T, n int, unreliable bool) Config
 
-func BasicThroughputBenchmark(t *testing.T, part string, fname string, contention float64, nservers int, nclients int, make_config makeConfigFn) {
+func ThroughputBenchmark(t *testing.T, part string, fname string, contention int, nservers int, nclients int, wide_area bool, make_config makeConfigFn) {
 	cfg := make_config(t, nservers, false)
 	o0 := cfg.getOps()
 	pathname := path.Join(dirname, fname)
@@ -96,11 +97,21 @@ func BasicThroughputBenchmark(t *testing.T, part string, fname string, contentio
 
 	defer cfg.cleanup()
 
-	cfg.begin(fmt.Sprintf("Bench: %s basic latency benchmark", part))
+	cfg.begin(fmt.Sprintf("Bench: %s throughput", part))
 
 	// Spawn goroutine that samples throughput every second
 	killed1 := make(chan struct{})
 	killed2 := make(chan struct{})
+
+	keys := make([]string, 100)
+
+	for i := range keys {
+		keys[i] = fmt.Sprintf("%v", i)
+	}
+
+	for i := 0; i < contention; i++ {
+		keys[i] = "same"
+	}
 
 	go spawn_clients_and_wait(t, cfg, nclients, func(me int, ck Clerk, t *testing.T) {
 		i := 0
@@ -111,7 +122,8 @@ func BasicThroughputBenchmark(t *testing.T, part string, fname string, contentio
 			default:
 			}
 
-			Append(cfg, ck, "k", "x "+strconv.Itoa(me)+" "+strconv.Itoa(i)+" y", me)
+			key := keys[rand.Intn(len(keys))]
+			Append(cfg, ck, key, "x "+strconv.Itoa(me)+" "+strconv.Itoa(i)+" y", me)
 			i++
 		}
 	})
@@ -139,21 +151,41 @@ func BasicThroughputBenchmark(t *testing.T, part string, fname string, contentio
 }
 
 func TestRaftBasicThroughputBenchmark(t *testing.T) {
-	BasicThroughputBenchmark(t, "raft, 5 clients", "raft_tput", 0.0, 5, 5, make_raft_config)
+	ThroughputBenchmark(t, "raft, 5 clients", "raft_tput", 100, 5, 5, false, make_raft_config)
 }
 
 func TestEPaxos0BasicThroughputBenchmark(t *testing.T) {
-	BasicThroughputBenchmark(t, "epaxos (0%), 5 clients", "epaxos_0_tput", 0.0, 5, 5, make_epaxos_config)
+	ThroughputBenchmark(t, "epaxos (0%), 5 clients", "epaxos_0_tput", 0, 5, 5, false, make_epaxos_config)
 }
 
 func TestEPaxos20BasicThroughputBenchmark(t *testing.T) {
-	BasicThroughputBenchmark(t, "epaxos (20%), 5 clients", "epaxos_20_tput", 0.2, 5, 5, make_epaxos_config)
+	ThroughputBenchmark(t, "epaxos (20%), 5 clients", "epaxos_20_tput", 20, 5, 5, false, make_epaxos_config)
 }
 
 func TestEPaxosBasic50ThroughputBenchmark(t *testing.T) {
-	BasicThroughputBenchmark(t, "epaxos (50%), 5 clients", "epaxos_50_tput", 0.5, 5, 5, make_epaxos_config)
+	ThroughputBenchmark(t, "epaxos (50%), 5 clients", "epaxos_50_tput", 50, 5, 5, false, make_epaxos_config)
 }
 
 func TestEPaxosBasic100ThroughputBenchmark(t *testing.T) {
-	BasicThroughputBenchmark(t, "epaxos (100%), 5 clients", "epaxos_100_tput", 1, 5, 5, make_epaxos_config)
+	ThroughputBenchmark(t, "epaxos (100%), 5 clients", "epaxos_100_tput", 100, 5, 5, false, make_epaxos_config)
+}
+
+func TestRaftWideAreaThroughputBenchmark(t *testing.T) {
+	ThroughputBenchmark(t, "raft, 5 clients, wide area", "raft_wa_tput", 100, 5, 5, true, make_raft_config)
+}
+
+func TestEPaxos0WideAreaThroughputBenchmark(t *testing.T) {
+	ThroughputBenchmark(t, "epaxos (0%), 5 clients, wide area", "epaxos_wa_0_tput", 0, 5, 5, true, make_epaxos_config)
+}
+
+func TestEPaxos20WideAreaThroughputBenchmark(t *testing.T) {
+	ThroughputBenchmark(t, "epaxos (20%), 5 clients, wide area", "epaxos_wa_20_tput", 20, 5, 5, true, make_epaxos_config)
+}
+
+func TestEPaxosWideArea50ThroughputBenchmark(t *testing.T) {
+	ThroughputBenchmark(t, "epaxos (50%), 5 clients, wide area", "epaxos_wa_50_tput", 50, 5, 5, true, make_epaxos_config)
+}
+
+func TestEPaxosWideArea100ThroughputBenchmark(t *testing.T) {
+	ThroughputBenchmark(t, "epaxos (100%), 5 clients, wide area", "epaxos_wa_100_tput", 100, 5, 5, true, make_epaxos_config)
 }
