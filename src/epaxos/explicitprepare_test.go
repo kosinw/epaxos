@@ -9,6 +9,7 @@ import (
 func interferes2(cmd1, cmd2 interface{}) bool {
 	return true
 }
+
 // func TestEP1(t *testing.T) {
 // 	const (
 // 		servers = 5
@@ -228,7 +229,7 @@ func TestEPRecovery(t *testing.T) {
 	cfg.crash1(leader1)
 	cfg.start1(leader1, cfg.applier)
 	cfg.connect(leader1)
-	index := LogIndex{Replica: leader1, Index:0}
+	index := LogIndex{Replica: leader1, Index: 0}
 	cfg.wait(index, servers)
 
 	cfg.end()
@@ -257,7 +258,7 @@ func TestEP3(t *testing.T) {
 
 	cfg.connect((leader1 + 2) % servers)
 	cfg.connect((leader1 + 3) % servers)
-	cfg.one(leader2, 102, servers - 2, false)
+	cfg.one(leader2, 102, servers-2, false)
 
 	cfg.connect((leader1 + 4) % servers)
 	cfg.connect(leader1)

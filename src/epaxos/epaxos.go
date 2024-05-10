@@ -613,12 +613,12 @@ func (e *EPaxos) broadcastCommit(instance Instance) (abort bool) {
 		}
 
 		go func(peer int) {
-			if time.Since(timeout) >= 1000 * time.Millisecond {
+			if time.Since(timeout) >= 1000*time.Millisecond {
 				instance.Timer = time.Now().Add(time.Duration(rand.Intn(300)) * time.Millisecond)
 				return
 			}
 			reply := CommitReply{}
-			
+
 			for !e.sendCommit(peer, &args, &reply) {
 				reply = CommitReply{}
 				time.Sleep(10 * time.Millisecond)
@@ -644,7 +644,7 @@ func (e *EPaxos) broadcastCommit(instance Instance) (abort bool) {
 	for !e.killed() {
 		lk.Wait()
 
-		if time.Since(timeout) >= 1000 * time.Millisecond {
+		if time.Since(timeout) >= 1000*time.Millisecond {
 			instance.Timer = time.Now().Add(time.Duration(rand.Intn(300)) * time.Millisecond)
 			return
 		}
