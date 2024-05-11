@@ -42,12 +42,12 @@ func (log *OpLog) Read() []porcupine.Operation {
 }
 
 func logOperation(operation string, start int64, end int64) {
-	file, _ := os.OpenFile("latency.log", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
-	latency := end - start
-	_, err := file.WriteString(fmt.Sprintf("%s: Start: %d, End: %d, Latency: %d µs\n", operation, start, end, latency))
-	if err != nil {
-		fmt.Println("Error writing to file:", err)
-	}
+	file, _ := os.OpenFile("raftTestSpeed4A_latency.log", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+    latency := end - start
+    _, err := file.WriteString(fmt.Sprintf("%s: Start: %d, End: %d, Latency: %d µs\n", operation, start, end, latency))
+    if err != nil {
+        fmt.Println("Error writing to file:", err)
+    }
 }
 
 // to make sure timestamps use the monotonic clock, instead of computing
@@ -418,12 +418,20 @@ func GenericTestSpeed(t *testing.T, part string, maxraftstate int) {
 	ck.Get("x")
 
 	start := time.Now()
+	start1 := int64(0)
+	end1 := int64(0)
 	for i := 0; i < numOps; i++ {
+		start1 = int64(time.Since(t0))
 		ck.Append("x", "x 0 "+strconv.Itoa(i)+" y")
+		end1 = int64(time.Since(t0))
+		logOperation("APPEND", start1, end1)
 	}
 	dur := time.Since(start)
 
+	start1 = int64(time.Since(t0))
 	v := ck.Get("x")
+	end1 = int64(time.Since(t0))
+	logOperation("GET", start1, end1)
 	checkClntAppends(t, 0, v, numOps)
 
 	// heartbeat interval should be ~ 100 ms; require at least 3 ops per

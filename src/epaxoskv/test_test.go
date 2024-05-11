@@ -1,16 +1,20 @@
 package epaxoskv
 
-import "6.5840/porcupine"
-import "6.5840/models"
-import "testing"
-import "strconv"
-import "time"
-import "math/rand"
-import "strings"
-import "sync"
-import "sync/atomic"
-import "fmt"
-import "io/ioutil"
+import (
+	"fmt"
+	"io/ioutil"
+	"math/rand"
+	"os"
+	"strconv"
+	"strings"
+	"sync"
+	"sync/atomic"
+	"testing"
+	"time"
+
+	"6.5840/models"
+	"6.5840/porcupine"
+)
 
 // The tester generously allows solutions to complete elections in one second
 // (much more than the paper's range of timeouts).
@@ -37,6 +41,15 @@ func (log *OpLog) Read() []porcupine.Operation {
 	return ops
 }
 
+func logOperation(operation string, start int64, end int64) {
+	file, _ := os.OpenFile("epaxosTestSpeed4A_latency.log", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+    latency := end - start
+    _, err := file.WriteString(fmt.Sprintf("%s: Start: %d, End: %d, Latency: %d µs\n", operation, start, end, latency))
+    if err != nil {
+        fmt.Println("Error writing to file:", err)
+    }
+}
+
 // to make sure timestamps use the monotonic clock, instead of computing
 // absolute timestamps with `time.Now().UnixNano()` (which uses the wall
 // clock), we measure time relative to `t0` using `time.Since(t0)`, which uses
@@ -58,7 +71,7 @@ func Get(cfg *config, ck *Clerk, key string, log *OpLog, cli int) string {
 			ClientId: cli,
 		})
 	}
-
+	logOperation("GET", start, end)
 	return v
 }
 
@@ -76,6 +89,7 @@ func Put(cfg *config, ck *Clerk, key string, value string, log *OpLog, cli int) 
 			ClientId: cli,
 		})
 	}
+	logOperation("PUT", start, end)
 }
 
 func Append(cfg *config, ck *Clerk, key string, value string, log *OpLog, cli int) {
@@ -92,6 +106,7 @@ func Append(cfg *config, ck *Clerk, key string, value string, log *OpLog, cli in
 			ClientId: cli,
 		})
 	}
+	logOperation("APPEND", start, end)
 }
 
 func check(cfg *config, t *testing.T, ck *Clerk, key string, value string) {
@@ -209,7 +224,9 @@ func partitioner(t *testing.T, cfg *config, ch chan bool, done *int32) {
 // maxraftstate is a positive number, the size of the state for Raft (i.e., log
 // size) shouldn't exceed 8*maxraftstate. If maxraftstate is negative,
 // snapshots shouldn't be used.
-func GenericTest(t *testing.T, part string, nclients int, nservers int, unreliable bool, crash bool, partitions bool, maxraftstate int, randomkeys bool) {
+
+// if numuniquekeys is negative, we don't specify a number of unique keys
+func GenericTest(t *testing.T, part string, nclients int, nservers int, unreliable bool, crash bool, partitions bool, maxraftstate int, randomkeys bool, numuniquekeys int) {
 
 	title := "Test: "
 	if unreliable {
@@ -271,6 +288,9 @@ func GenericTest(t *testing.T, part string, nclients int, nservers int, unreliab
 					key = strconv.Itoa(rand.Intn(nclients))
 				} else {
 					key = strconv.Itoa(cli)
+				}
+				if numuniquekeys != 1 {
+					key = strconv.Itoa(rand.Intn(numuniquekeys))
 				}
 				nv := "x " + strconv.Itoa(cli) + " " + strconv.Itoa(j) + " y"
 				if (rand.Int() % 1000) < 500 {
@@ -403,12 +423,20 @@ func GenericTestSpeed(t *testing.T, part string, maxraftstate int) {
 	ck.Get("x")
 
 	start := time.Now()
+	start1 := int64(0)
+	end1 := int64(0)
 	for i := 0; i < numOps; i++ {
+		start1 = int64(time.Since(t0))
 		ck.Append("x", "x 0 "+strconv.Itoa(i)+" y")
+		end1 = int64(time.Since(t0))
+		logOperation("APPEND", start1, end1)
 	}
 	dur := time.Since(start)
 
+	start1 = int64(time.Since(t0))
 	v := ck.Get("x")
+	end1 = int64(time.Since(t0))
+	logOperation("GET", start1, end1)
 	checkClntAppends(t, 0, v, numOps)
 
 	// heartbeat interval should be ~ 100 ms; require at least 3 ops per
@@ -424,7 +452,7 @@ func GenericTestSpeed(t *testing.T, part string, maxraftstate int) {
 
 func TestBasic4A(t *testing.T) {
 	// Test: one client (4A) ...
-	GenericTest(t, "4A", 1, 5, false, false, false, -1, false)
+	GenericTest(t, "4A", 1, 5, false, false, false, -1, false, -1)
 }
 
 func TestSpeed4A(t *testing.T) {
@@ -433,12 +461,12 @@ func TestSpeed4A(t *testing.T) {
 
 func TestConcurrent4A(t *testing.T) {
 	// Test: many clients (4A) ...
-	GenericTest(t, "4A", 5, 5, false, false, false, -1, false)
+	GenericTest(t, "4A", 5, 5, false, false, false, -1, false, -1)
 }
 
 func TestUnreliable4A(t *testing.T) {
 	// Test: unreliable net, many clients (4A) ...
-	GenericTest(t, "4A", 5, 5, true, false, false, -1, false)
+	GenericTest(t, "4A", 5, 5, true, false, false, -1, false, -1)
 }
 
 func TestUnreliableOneKey4A(t *testing.T) {
@@ -553,40 +581,40 @@ func TestOnePartition4A(t *testing.T) {
 
 func TestManyPartitionsOneClient4A(t *testing.T) {
 	// Test: partitions, one client (4A) ...
-	GenericTest(t, "4A", 1, 5, false, false, true, -1, false)
+	GenericTest(t, "4A", 1, 5, false, false, true, -1, false, -1)
 }
 
 func TestManyPartitionsManyClients4A(t *testing.T) {
 	// Test: partitions, many clients (4A) ...
-	GenericTest(t, "4A", 5, 5, false, false, true, -1, false)
+	GenericTest(t, "4A", 5, 5, false, false, true, -1, false, -1)
 }
 
 func TestPersistOneClient4A(t *testing.T) {
 	// Test: restarts, one client (4A) ...
-	GenericTest(t, "4A", 1, 5, false, true, false, -1, false)
+	GenericTest(t, "4A", 1, 5, false, true, false, -1, false, -1)
 }
 
 func TestPersistConcurrent4A(t *testing.T) {
 	// Test: restarts, many clients (4A) ...
-	GenericTest(t, "4A", 5, 5, false, true, false, -1, false)
+	GenericTest(t, "4A", 5, 5, false, true, false, -1, false, -1)
 }
 
 func TestPersistConcurrentUnreliable4A(t *testing.T) {
 	// Test: unreliable net, restarts, many clients (4A) ...
-	GenericTest(t, "4A", 5, 5, true, true, false, -1, false)
+	GenericTest(t, "4A", 5, 5, true, true, false, -1, false, -1)
 }
 
 func TestPersistPartition4A(t *testing.T) {
 	// Test: restarts, partitions, many clients (4A) ...
-	GenericTest(t, "4A", 5, 5, false, true, true, -1, false)
+	GenericTest(t, "4A", 5, 5, false, true, true, -1, false, -1)
 }
 
 func TestPersistPartitionUnreliable4A(t *testing.T) {
 	// Test: unreliable net, restarts, partitions, many clients (4A) ...
-	GenericTest(t, "4A", 5, 5, true, true, true, -1, false)
+	GenericTest(t, "4A", 5, 5, true, true, true, -1, false, -1)
 }
 
 func TestPersistPartitionUnreliableLinearizable4A(t *testing.T) {
 	// Test: unreliable net, restarts, partitions, random keys, many clients (4A) ...
-	GenericTest(t, "4A", 15, 7, true, true, true, -1, true)
+	GenericTest(t, "4A", 15, 7, true, true, true, -1, true, -1)
 }
