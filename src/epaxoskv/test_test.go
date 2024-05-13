@@ -226,7 +226,7 @@ func partitioner(t *testing.T, cfg *config, ch chan bool, done *int32) {
 // snapshots shouldn't be used.
 
 // if numuniquekeys is negative, we don't specify a number of unique keys
-func GenericTest(t *testing.T, part string, nclients int, nservers int, unreliable bool, crash bool, partitions bool, maxraftstate int, randomkeys bool, numuniquekeys int) {
+func GenericTest(t *testing.T, part string, nclients int, nservers int, unreliable bool, crash bool, partitions bool, maxraftstate int, randomkeys bool) {
 
 	title := "Test: "
 	if unreliable {
@@ -288,9 +288,6 @@ func GenericTest(t *testing.T, part string, nclients int, nservers int, unreliab
 					key = strconv.Itoa(rand.Intn(nclients))
 				} else {
 					key = strconv.Itoa(cli)
-				}
-				if numuniquekeys != 1 {
-					key = strconv.Itoa(rand.Intn(numuniquekeys))
 				}
 				nv := "x " + strconv.Itoa(cli) + " " + strconv.Itoa(j) + " y"
 				if (rand.Int() % 1000) < 500 {
@@ -452,7 +449,7 @@ func GenericTestSpeed(t *testing.T, part string, maxraftstate int) {
 
 func TestBasic4A(t *testing.T) {
 	// Test: one client (4A) ...
-	GenericTest(t, "4A", 1, 5, false, false, false, -1, false, -1)
+	GenericTest(t, "4A", 1, 5, false, false, false, -1, false)
 }
 
 func TestSpeed4A(t *testing.T) {
@@ -461,12 +458,12 @@ func TestSpeed4A(t *testing.T) {
 
 func TestConcurrent4A(t *testing.T) {
 	// Test: many clients (4A) ...
-	GenericTest(t, "4A", 5, 5, false, false, false, -1, false, -1)
+	GenericTest(t, "4A", 5, 5, false, false, false, -1, false)
 }
 
 func TestUnreliable4A(t *testing.T) {
 	// Test: unreliable net, many clients (4A) ...
-	GenericTest(t, "4A", 5, 5, true, false, false, -1, false, -1)
+	GenericTest(t, "4A", 5, 5, true, false, false, -1, false)
 }
 
 func TestUnreliableOneKey4A(t *testing.T) {
@@ -581,40 +578,40 @@ func TestOnePartition4A(t *testing.T) {
 
 func TestManyPartitionsOneClient4A(t *testing.T) {
 	// Test: partitions, one client (4A) ...
-	GenericTest(t, "4A", 1, 5, false, false, true, -1, false, -1)
+	GenericTest(t, "4A", 1, 5, false, false, true, -1, false)
 }
 
 func TestManyPartitionsManyClients4A(t *testing.T) {
 	// Test: partitions, many clients (4A) ...
-	GenericTest(t, "4A", 5, 5, false, false, true, -1, false, -1)
+	GenericTest(t, "4A", 5, 5, false, false, true, -1, false)
 }
 
 func TestPersistOneClient4A(t *testing.T) {
 	// Test: restarts, one client (4A) ...
-	GenericTest(t, "4A", 1, 5, false, true, false, -1, false, -1)
+	GenericTest(t, "4A", 1, 5, false, true, false, -1, false)
 }
 
 func TestPersistConcurrent4A(t *testing.T) {
 	// Test: restarts, many clients (4A) ...
-	GenericTest(t, "4A", 5, 5, false, true, false, -1, false, -1)
+	GenericTest(t, "4A", 5, 5, false, true, false, -1, false)
 }
 
 func TestPersistConcurrentUnreliable4A(t *testing.T) {
 	// Test: unreliable net, restarts, many clients (4A) ...
-	GenericTest(t, "4A", 5, 5, true, true, false, -1, false, -1)
+	GenericTest(t, "4A", 5, 5, true, true, false, -1, false)
 }
 
 func TestPersistPartition4A(t *testing.T) {
 	// Test: restarts, partitions, many clients (4A) ...
-	GenericTest(t, "4A", 5, 5, false, true, true, -1, false, -1)
+	GenericTest(t, "4A", 5, 5, false, true, true, -1, false)
 }
 
 func TestPersistPartitionUnreliable4A(t *testing.T) {
 	// Test: unreliable net, restarts, partitions, many clients (4A) ...
-	GenericTest(t, "4A", 5, 5, true, true, true, -1, false, -1)
+	GenericTest(t, "4A", 5, 5, true, true, true, -1, false)
 }
 
 func TestPersistPartitionUnreliableLinearizable4A(t *testing.T) {
 	// Test: unreliable net, restarts, partitions, random keys, many clients (4A) ...
-	GenericTest(t, "4A", 15, 7, true, true, true, -1, true, -1)
+	GenericTest(t, "4A", 15, 7, true, true, true, -1, true)
 }
